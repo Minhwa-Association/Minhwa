@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient, currentMember } from "@/lib/supabase/server";
 import { WEEKDAYS_LONG, sessionLabel } from "@/lib/dates";
-import { setInstructor, setRole, updateSettings } from "@/app/actions";
+import { addMember, setInstructor, setRole, updateSettings } from "@/app/actions";
 import { Notice, TopNav } from "@/app/components";
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ error?: string; ok?: string }> }) {
@@ -14,7 +14,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const [{ data: settings }, { data: slots }, { data: members }] = await Promise.all([
     supabase.from("settings").select("*").eq("id", 1).single(),
     supabase.from("slots").select("id, weekday, session, instructor_id").order("weekday").order("session"),
-    supabase.from("members").select("id, name, phone, role").order("name"),
+    supabase.from("members").select("id, name, phone, role, auth_id").order("name"),
   ]);
   const teachers = (members ?? []).filter((m) => m.role === "instructor" || m.role === "admin");
 
@@ -54,13 +54,28 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           ))}
         </div>
 
+        <form action={addMember} className="card stack" style={{ padding: 18 }}>
+          <h2>Add a member or teacher</h2>
+          <div className="muted small">Pre-register by phone. When they log in with that number for the first time, their account links to this entry automatically.</div>
+          <div><label htmlFor="nm">Name</label><input id="nm" name="name" required placeholder="Anna Lind" /></div>
+          <div><label htmlFor="ph">Mobile number</label><input id="ph" name="phone" type="tel" required placeholder="070 123 45 67" /></div>
+          <div><label htmlFor="rl">Role</label>
+            <select id="rl" name="role" defaultValue="member">
+              <option value="member">Member</option>
+              <option value="instructor">Teacher</option>
+              <option value="admin">Admin</option>
+            </select>
+          </div>
+          <button className="btn ink">Add</button>
+        </form>
+
         <div className="card stack" style={{ padding: 18 }}>
           <h2>Members</h2>
-          <div className="muted small">Everyone who has logged in once. Change a role to make someone a teacher or admin.</div>
+          <div className="muted small">Pre-registered and logged-in members. Change a role to make someone a teacher or admin.</div>
           {(members ?? []).map((m) => (
             <form key={m.id} action={setRole} className="row" style={{ gap: 8 }}>
               <input type="hidden" name="member_id" value={m.id} />
-              <div className="grow"><div style={{ fontWeight: 600 }}>{m.name}</div><div className="muted small">{m.phone}</div></div>
+              <div className="grow"><div style={{ fontWeight: 600 }}>{m.name}</div><div className="muted small">{m.phone}{m.auth_id ? "" : " · not logged in yet"}</div></div>
               <select name="role" defaultValue={m.role} style={{ width: 130 }}>
                 <option value="member">Member</option>
                 <option value="instructor">Teacher</option>

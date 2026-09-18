@@ -33,7 +33,7 @@ export async function currentMember() {
   const { data: member } = await supabase
     .from("members")
     .select("id, name, phone, role, active")
-    .eq("id", user.id)
+    .eq("auth_id", user.id)
     .single();
   return member;
 }

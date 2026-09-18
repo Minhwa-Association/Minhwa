@@ -53,10 +53,10 @@ export async function confirmPaid(formData: FormData) {
 export async function saveName(formData: FormData) {
   const name = String(formData.get("name") || "").trim();
   if (name.length < 1) backWithError("/welcome", "Please enter your name.");
+  const me = await currentMember();
+  if (!me) redirect("/login");
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/login");
-  const { error } = await supabase.from("members").update({ name }).eq("id", user.id);
+  const { error } = await supabase.from("members").update({ name }).eq("id", me.id);
   if (error) backWithError("/welcome", error.message);
   revalidatePath("/");
   redirect("/");
@@ -99,6 +99,20 @@ export async function setRole(formData: FormData) {
   const supabase = await createClient();
   const { error } = await supabase.from("members").update({ role }).eq("id", memberId);
   if (error) backWithError("/admin/settings", error.message);
+  redirect("/admin/settings?ok=saved");
+}
+
+export async function addMember(formData: FormData) {
+  const me = await currentMember();
+  if (me?.role !== "admin") redirect("/");
+  const name = String(formData.get("name") || "").trim();
+  const phone = String(formData.get("phone") || "").trim();
+  const role = String(formData.get("role") || "member");
+  if (!name || !phone) backWithError("/admin/settings", "Name and phone are required.");
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("admin_add_member", { p_name: name, p_phone: phone, p_role: role });
+  if (error) backWithError("/admin/settings", error.message);
+  revalidatePath("/admin/settings");
   redirect("/admin/settings?ok=saved");
 }
 
