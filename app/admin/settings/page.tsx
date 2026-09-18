@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient, currentMember } from "@/lib/supabase/server";
 import { WEEKDAYS_LONG, sessionLabel } from "@/lib/dates";
-import { addMember, setInstructor, setRole, updateSettings } from "@/app/actions";
+import { addMember, setInstructor, setRole, setSlotWhatsapp, updateSettings } from "@/app/actions";
 import { Notice, TopNav } from "@/app/components";
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ error?: string; ok?: string }> }) {
@@ -13,7 +13,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const supabase = await createClient();
   const [{ data: settings }, { data: slots }, { data: members }] = await Promise.all([
     supabase.from("settings").select("*").eq("id", 1).single(),
-    supabase.from("slots").select("id, weekday, session, instructor_id").order("weekday").order("session"),
+    supabase.from("slots").select("id, weekday, session, instructor_id, whatsapp_url").order("weekday").order("session"),
     supabase.from("members").select("id, name, phone, role, auth_id").order("name"),
   ]);
   const teachers = (members ?? []).filter((m) => m.role === "instructor" || m.role === "admin");
@@ -68,6 +68,19 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           </div>
           <button className="btn ink">Add</button>
         </form>
+
+        <div className="card stack" style={{ padding: 18 }}>
+          <h2>WhatsApp group per slot</h2>
+          <div className="muted small">In WhatsApp: group → Group info → Invite via link → Copy link. Members see an &ldquo;Open WhatsApp group&rdquo; button on that slot.</div>
+          {(slots ?? []).map((s) => (
+            <form key={s.id} action={setSlotWhatsapp} className="row" style={{ gap: 8 }}>
+              <input type="hidden" name="slot_id" value={s.id} />
+              <div style={{ width: 130, fontWeight: 600, fontSize: 14 }}>{WEEKDAYS_LONG[s.weekday - 1].slice(0, 3)} {sessionLabel(s.session)}</div>
+              <input name="whatsapp_url" type="url" placeholder="https://chat.whatsapp.com/…" defaultValue={s.whatsapp_url ?? ""} className="grow" />
+              <button className="btn line sm">Set</button>
+            </form>
+          ))}
+        </div>
 
         <div className="card stack" style={{ padding: 18 }}>
           <h2>Members</h2>

@@ -17,7 +17,7 @@ export default async function SlotPage({ params, searchParams }: {
 
   const supabase = await createClient();
   const [{ data: slot }, { data: bookings }, { data: settings }] = await Promise.all([
-    supabase.from("slots").select("id, weekday, session, start_time, end_time, capacity, instructor:members!slots_instructor_id_fkey(name)").eq("id", slotId).single(),
+    supabase.from("slots").select("id, weekday, session, start_time, end_time, capacity, instructor_id, whatsapp_url, instructor:members!slots_instructor_id_fkey(name)").eq("id", slotId).single(),
     supabase.from("bookings").select("id, member_id, created_at, charge_id, member:members(name)").eq("slot_id", slotId).eq("date", date).eq("status", "booked").order("created_at"),
     supabase.from("settings").select("seat_price_sek, cancel_deadline_days").eq("id", 1).single(),
   ]);
@@ -36,6 +36,7 @@ export default async function SlotPage({ params, searchParams }: {
   const left = Math.max(0, cap - taken);
   const price = settings?.seat_price_sek ?? 100;
   const instructorName = (slot.instructor as unknown as { name: string } | null)?.name ?? null;
+  const iTeachThis = slot.instructor_id === me.id;
   const rows = [...list.map((b, i) => ({ b, i })), ...Array.from({ length: left }).map((_, k) => ({ b: null, i: taken + k }))];
 
   return (
@@ -48,11 +49,17 @@ export default async function SlotPage({ params, searchParams }: {
         </div>
         <Notice error={error} ok={ok} />
 
+        {slot.whatsapp_url && (
+          <a href={slot.whatsapp_url} target="_blank" rel="noopener noreferrer" className="btn line" style={{ gap: 8 }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-12.6 7.3L3 21l2.2-5.2A8.5 8.5 0 1 1 21 11.5z" /></svg>
+            Open WhatsApp group
+          </a>
+        )}
         <div className="card person">
           <div className="avatar big">{instructorName ? instructorName[0] : "?"}</div>
           <div>
             <div className="muted small">Teacher this session</div>
-            <div className="bold">{instructorName ? `Teacher ${instructorName}` : "Not set yet"}</div>
+            <div className="bold">{instructorName ? `Teacher ${instructorName}` : "Not set yet"}{iTeachThis ? " (you)" : ""}</div>
           </div>
         </div>
 
@@ -94,6 +101,8 @@ export default async function SlotPage({ params, searchParams }: {
             </form>
             <div className="muted small" style={{ textAlign: "center" }}>Free to cancel until {settings?.cancel_deadline_days ?? 1} day{(settings?.cancel_deadline_days ?? 1) === 1 ? "" : "s"} before.</div>
           </>
+        ) : iTeachThis ? (
+          <div className="notice">You&apos;re the teacher for this session — no seat needed.</div>
         ) : (
           <>
             <form action={bookSeat}>

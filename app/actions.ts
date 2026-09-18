@@ -91,6 +91,19 @@ export async function setInstructor(formData: FormData) {
   redirect("/admin/settings?ok=saved");
 }
 
+export async function setSlotWhatsapp(formData: FormData) {
+  const me = await currentMember();
+  if (me?.role !== "admin") redirect("/");
+  const slotId = String(formData.get("slot_id"));
+  const raw = String(formData.get("whatsapp_url") || "").trim();
+  if (raw && !/^https:\/\/chat\.whatsapp\.com\//.test(raw)) backWithError("/admin/settings", "Paste the group invite link (starts with https://chat.whatsapp.com/).");
+  const supabase = await createClient();
+  const { error } = await supabase.from("slots").update({ whatsapp_url: raw || null }).eq("id", slotId);
+  if (error) backWithError("/admin/settings", error.message);
+  revalidatePath("/");
+  redirect("/admin/settings?ok=saved");
+}
+
 export async function setRole(formData: FormData) {
   const me = await currentMember();
   if (me?.role !== "admin") redirect("/");

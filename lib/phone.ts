@@ -3,6 +3,7 @@ export function normalisePhone(raw: string): string {
   let s = raw.replace(/[\s\-()]/g, "");
   if (s.startsWith("00")) s = "+" + s.slice(2);
   if (s.startsWith("0")) s = "+46" + s.slice(1);
+  if (/^7\d{8}$/.test(s)) s = "+46" + s;
   if (!s.startsWith("+")) s = "+" + s;
   return s;
 }
