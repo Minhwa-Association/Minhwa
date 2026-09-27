@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient, currentMember } from "@/lib/supabase/server";
-import { canUseCalendar, hasRole } from "@/lib/roles";
+import { canUseCalendar } from "@/lib/roles";
 import { dayShort, monthYear, parseISODate, todayStockholm } from "@/lib/dates";
 import { audienceLabel, isPast, isToday, whenLabel, type EventRow } from "@/lib/calendar";
 import { Notice, TopNav } from "@/app/components";
@@ -35,7 +35,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
     <main className="page">
       <div className="topbar">
         <div><h1>Calendar</h1><div className="muted small">Activities · Crew and Admin</div></div>
-        <TopNav current="calendar" isAdmin={hasRole(me, "admin")} showCalendar />
+        <TopNav current="calendar" me={me} />
       </div>
 
       <div className="stack">

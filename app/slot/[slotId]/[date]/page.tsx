@@ -2,8 +2,9 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient, currentMember } from "@/lib/supabase/server";
 import { hm, isValidISODate, longDate, parseISODate, sessionLabel, WEEKDAYS_LONG } from "@/lib/dates";
+import { paymentClass } from "@/lib/payments";
 import { bookSeat, cancelBooking } from "@/app/actions";
-import { ChargeTag, Chevron, Notice } from "@/app/components";
+import { PaymentTag, Chevron, Notice } from "@/app/components";
 
 export default async function SlotPage({ params, searchParams }: {
   params: Promise<{ slotId: string; date: string }>;
@@ -18,17 +19,17 @@ export default async function SlotPage({ params, searchParams }: {
   const supabase = await createClient();
   const [{ data: slot }, { data: bookings }, { data: settings }] = await Promise.all([
     supabase.from("slots").select("id, weekday, session, start_time, end_time, capacity, instructor_id, whatsapp_url, instructor:members!slots_instructor_id_fkey(name)").eq("id", slotId).single(),
-    supabase.from("bookings").select("id, member_id, created_at, charge_id, member:members(name)").eq("slot_id", slotId).eq("date", date).eq("status", "booked").order("created_at"),
+    supabase.from("bookings").select("id, member_id, created_at, payment_id, member:members(name)").eq("slot_id", slotId).eq("date", date).eq("status", "booked").order("created_at"),
     supabase.from("settings").select("seat_price_sek, cancel_deadline_days").eq("id", 1).single(),
   ]);
   if (!slot) notFound();
 
   const list = bookings ?? [];
   const mine = list.find((b) => b.member_id === me.id);
-  let myCharge: { status: string } | null = null;
-  if (mine?.charge_id) {
-    const { data } = await supabase.from("charges").select("status").eq("id", mine.charge_id).single();
-    myCharge = data;
+  let myPayment: { status: string } | null = null;
+  if (mine?.payment_id) {
+    const { data } = await supabase.from("payments").select("status").eq("id", mine.payment_id).single();
+    myPayment = data;
   }
   const d = parseISODate(date);
   const taken = list.length;
@@ -72,16 +73,16 @@ export default async function SlotPage({ params, searchParams }: {
           <div className="muted small">Who&apos;s coming</div>
           <div className="legend" style={{ gap: 10 }}>
             <span><i className="swatch" style={{ background: "var(--green)", borderRadius: 3 }} />Paid</span>
-            <span><i className="swatch" style={{ background: "var(--gold)", borderRadius: 3 }} />Pending</span>
+            <span><i className="swatch" style={{ background: "var(--gold)", borderRadius: 3 }} />Awaiting confirmation</span>
           </div>
         </div>
         <div className="stack" style={{ gap: 8 }}>
           {rows.map(({ b, i }) =>
             b ? (
-              <div key={b.id} className={`card person ${i >= cap ? "extra" : b.member_id === me.id ? (myCharge?.status === "paid" ? "paid" : myCharge?.status === "pending" ? "pending" : "") : ""}`}>
+              <div key={b.id} className={`card person ${i >= cap ? "extra" : b.member_id === me.id ? paymentClass(myPayment?.status) : ""}`}>
                 <div className="avatar">{((b.member as unknown as { name: string } | null)?.name ?? "?")[0]}</div>
                 <div style={{ fontWeight: 600 }}>{(b.member as unknown as { name: string } | null)?.name ?? "Member"}{b.member_id === me.id ? " (you)" : ""}</div>
-                {i >= cap ? <ChargeTag extra /> : b.member_id === me.id ? <ChargeTag status={myCharge?.status} /> : null}
+                {i >= cap ? <PaymentTag extra /> : b.member_id === me.id ? <PaymentTag status={myPayment?.status} /> : null}
               </div>
             ) : (
               <div key={`open-${i}`} className="card dashed person"><div className="avatar ghost" /><div>Open seat</div></div>
@@ -93,7 +94,7 @@ export default async function SlotPage({ params, searchParams }: {
       <div className="footer">
         {mine ? (
           <>
-            {myCharge?.status === "unpaid" && <Link href={`/pay/${mine.id}`} className="btn red">Pay {price} kr with Swish</Link>}
+            {myPayment?.status === "pending" && <Link href={`/pay/${mine.id}`} className="btn red">Pay {price} kr with Swish</Link>}
             <form action={cancelBooking}>
               <input type="hidden" name="booking_id" value={mine.id} />
               <input type="hidden" name="back" value={`/slot/${slotId}/${date}`} />

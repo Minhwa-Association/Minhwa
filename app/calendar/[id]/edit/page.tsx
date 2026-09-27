@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient, currentMember } from "@/lib/supabase/server";
-import { canUseCalendar, hasRole } from "@/lib/roles";
+import { canUseCalendar } from "@/lib/roles";
 import { deleteEvent, updateEvent } from "@/app/actions";
 import { Notice, TopNav } from "@/app/components";
 import { EventForm } from "@/app/calendar/EventForm";
@@ -22,7 +22,7 @@ export default async function EditEventPage({ params, searchParams }: { params: 
     <main className="page">
       <div className="topbar">
         <div><h1>Edit event</h1><div className="muted small"><Link href={`/calendar/${e.id}`}>← Back to the event</Link></div></div>
-        <TopNav current="calendar" isAdmin={hasRole(me, "admin")} showCalendar />
+        <TopNav current="calendar" me={me} />
       </div>
       <div className="stack">
         <Notice error={error} />

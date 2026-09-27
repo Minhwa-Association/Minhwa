@@ -2,7 +2,7 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient, currentMember } from "@/lib/supabase/server";
-import { canUseCalendar, hasRole } from "@/lib/roles";
+import { canUseCalendar } from "@/lib/roles";
 import { resetCalendarLink } from "@/app/actions";
 import { Notice, TopNav } from "@/app/components";
 import { CopyButton } from "./CopyButton";
@@ -22,7 +22,7 @@ export default async function SubscribePage({ searchParams }: { searchParams: Pr
     <main className="page">
       <div className="topbar">
         <div><h1>Phone calendar</h1><div className="muted small"><Link href="/calendar">← Calendar</Link></div></div>
-        <TopNav current="calendar" isAdmin={hasRole(me, "admin")} showCalendar />
+        <TopNav current="calendar" me={me} />
       </div>
       <div className="stack">
         <Notice error={error ?? tokErr?.message} ok={ok} />

@@ -172,3 +172,24 @@ input.code { font-size: 28px; letter-spacing: 0.3em; text-align: center; font-we
 .linkbox { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; word-break: break-all; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
 .steps { margin: 0; padding-left: 18px; font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
 .prewrap { white-space: pre-wrap; }
+
+/* payments */
+.paysect h2 { font-size: 19px; }
+.count { display: inline-flex; min-width: 22px; height: 22px; padding: 0 7px; border-radius: 999px; background: var(--ink); color: var(--white); font-size: 12px; font-weight: 700; align-items: center; justify-content: center; margin-left: 8px; vertical-align: middle; font-family: "Manrope", sans-serif; }
+.count.zero { background: var(--divider); color: var(--muted); }
+.txrow { display: grid; grid-template-columns: 44px minmax(0, 1fr) auto; gap: 8px 12px; align-items: center; padding: 10px 0; border-top: 1px solid var(--divider); }
+.txrow:first-of-type { border-top: 0; }
+.txrow .amt { font-family: "Fraunces", Georgia, serif; font-size: 18px; font-weight: 600; white-space: nowrap; text-align: right; }
+.txrow .actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; grid-column: 1 / -1; }
+@media (min-width: 760px) {
+  .txrow { grid-template-columns: 44px minmax(0, 1fr) 90px auto; }
+  .txrow .actions { grid-column: auto; }
+}
+.tag.code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 11px; background: var(--bg); border: 1px solid var(--line); color: var(--ink); margin-left: 0; padding: 2px 6px; }
+.arrow { color: var(--muted); }
+select.inline { min-height: 40px; padding: 6px 10px; font-size: 14px; width: auto; max-width: 100%; }
+input[type="file"] { padding: 8px; font-size: 14px; min-height: 0; }
+details.paysect summary { list-style: none; }
+details.paysect summary::-webkit-details-marker { display: none; }
+details.paysect summary::before { content: "▸ "; color: var(--muted); }
+details[open].paysect summary::before { content: "▾ "; }

@@ -23,7 +23,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
     <main className="page wide">
       <div className="topbar">
         <div><h1>Settings</h1><div className="muted small"><Link href="/admin">← Back to the admin board</Link></div></div>
-        <TopNav current="admin" isAdmin showCalendar />
+        <TopNav current="admin" me={me} />
       </div>
       <Notice error={error} ok={ok} />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 20, marginTop: 12 }}>
@@ -86,7 +86,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
 
         <div className="card stack" style={{ padding: 18 }}>
           <h2>Members</h2>
-          <div className="muted small">Everyone is a member. Tick any extra roles — one person can hold several. Teacher: can be set on a slot · Crew: prepares and runs activities (sees the Calendar) · Admin: this board and settings.</div>
+          <div className="muted small">Everyone is a member. Tick any extra roles — one person can hold several. Teacher: can be set on a slot · Crew: prepares and runs activities (sees the Calendar) · Treasurer: the Payments tab (bank statement, confirmations) · Admin: this board and settings.</div>
           {(members ?? []).map((m) => (
             <form key={m.id} action={setRoles} className="memberrow">
               <input type="hidden" name="member_id" value={m.id} />

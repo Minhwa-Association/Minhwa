@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { currentMember } from "@/lib/supabase/server";
-import { canUseCalendar, hasRole } from "@/lib/roles";
+import { canUseCalendar } from "@/lib/roles";
 import { todayStockholm } from "@/lib/dates";
 import { createEvent } from "@/app/actions";
 import { Notice, TopNav } from "@/app/components";
@@ -17,7 +17,7 @@ export default async function NewEventPage({ searchParams }: { searchParams: Pro
     <main className="page">
       <div className="topbar">
         <div><h1>New event</h1><div className="muted small"><Link href="/calendar">← Calendar</Link></div></div>
-        <TopNav current="calendar" isAdmin={hasRole(me, "admin")} showCalendar />
+        <TopNav current="calendar" me={me} />
       </div>
       <div className="stack">
         <Notice error={error} />

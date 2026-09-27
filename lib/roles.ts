@@ -2,6 +2,7 @@
 export const ROLES = [
   { key: "teacher", label: "Teacher", hint: "can be set as a slot's teacher" },
   { key: "crew", label: "Crew", hint: "prepares and runs activities" },
+  { key: "treasurer", label: "Treasurer", hint: "payments and the bank statement" },
   { key: "admin", label: "Admin", hint: "admin board and settings" },
 ] as const;
 
@@ -25,4 +26,9 @@ export function roleLabels(roles?: string[] | null): string {
 /** The calendar (tab, pages, phone feed) is for Crew and Admin only. */
 export function canUseCalendar(m: { roles?: string[] | null } | null | undefined): boolean {
   return hasRole(m, "crew") || hasRole(m, "admin");
+}
+
+/** The Payments tab (bank statement, confirmations) is for the Treasurer and Admin. */
+export function canUsePayments(m: { roles?: string[] | null } | null | undefined): boolean {
+  return hasRole(m, "treasurer") || hasRole(m, "admin");
 }

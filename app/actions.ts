@@ -3,13 +3,18 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient, currentMember } from "@/lib/supabase/server";
-import { canUseCalendar, cleanRoles, hasRole } from "@/lib/roles";
+import { canUseCalendar, canUsePayments, cleanRoles, hasRole } from "@/lib/roles";
 import { isValidISODate } from "@/lib/dates";
 import { keyToAudience } from "@/lib/calendar";
+import { decodeStatement, parseNordea } from "@/lib/nordea";
 
 function backWithError(path: string, message: string): never {
   const sep = path.includes("?") ? "&" : "?";
   redirect(`${path}${sep}error=${encodeURIComponent(message)}`);
+}
+
+function withOk(path: string, ok: string): string {
+  return `${path}${path.includes("?") ? "&" : "?"}ok=${ok}`;
 }
 
 export async function bookSeat(formData: FormData) {
@@ -31,27 +36,139 @@ export async function cancelBooking(formData: FormData) {
   revalidatePath("/");
   revalidatePath("/me");
   revalidatePath("/admin");
-  redirect(`${back}${back.includes("?") ? "&" : "?"}ok=cancelled`);
+  revalidatePath("/payments");
+  redirect(withOk(back, "cancelled"));
 }
 
-export async function markPending(formData: FormData) {
-  const chargeId = String(formData.get("charge_id"));
+// ---- payments: member side --------------------------------------------------
+
+/** "I have paid" — the payment waits for the treasurer to see it in the bank. */
+export async function claimPayment(formData: FormData) {
+  const paymentId = String(formData.get("payment_id"));
   const supabase = await createClient();
-  const { error } = await supabase.rpc("mark_pending", { p_charge_id: chargeId });
+  const { error } = await supabase.rpc("claim_payment", { p_payment_id: paymentId });
   if (error) backWithError("/me", error.message);
   revalidatePath("/me");
+  revalidatePath("/payments");
   redirect("/me?ok=paid");
 }
 
-export async function confirmPaid(formData: FormData) {
-  const chargeId = String(formData.get("charge_id"));
-  const back = String(formData.get("back") || "/admin");
-  const supabase = await createClient();
-  const { error } = await supabase.rpc("confirm_paid", { p_charge_id: chargeId });
-  if (error) backWithError(back, error.message);
+// ---- payments: treasurer / admin -------------------------------------------
+
+function refreshPayments() {
+  revalidatePath("/payments");
   revalidatePath("/admin");
-  redirect(back);
+  revalidatePath("/me");
+  revalidatePath("/");
 }
+
+async function treasurer() {
+  const me = await currentMember();
+  if (!me) redirect("/login");
+  if (!canUsePayments(me)) redirect("/");
+  return me;
+}
+
+/** Confirm one payment — from the admin board ("Mark paid"), the waiting list, or tied to a bank line. */
+export async function confirmPayment(formData: FormData) {
+  await treasurer();
+  const paymentId = String(formData.get("payment_id"));
+  const txId = String(formData.get("tx_id") || "") || null;
+  const back = String(formData.get("back") || "/payments");
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("confirm_payment", { p_payment_id: paymentId, p_tx_id: txId });
+  if (error) backWithError(back, error.message);
+  refreshPayments();
+  redirect(withOk(back, "confirmed"));
+}
+
+/** Confirm every bank line that was matched by its payment code. */
+export async function confirmMatched() {
+  await treasurer();
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("confirm_matched");
+  if (error) backWithError("/payments", error.message);
+  refreshPayments();
+  redirect(`/payments?ok=confirmed_all&n=${Number(data) || 0}`);
+}
+
+/** "Not this one" — drop a suggestion / code match; the bank line waits again. */
+export async function rejectMatch(formData: FormData) {
+  await treasurer();
+  const txId = String(formData.get("tx_id"));
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("reject_match", { p_tx_id: txId });
+  if (error) backWithError("/payments", error.message);
+  refreshPayments();
+  redirect("/payments?ok=rejected");
+}
+
+/** A bank line the treasurer picks a payment for by hand → confirmed, and the payer's bank name is remembered. */
+export async function attachTransaction(formData: FormData) {
+  await treasurer();
+  const txId = String(formData.get("tx_id"));
+  const paymentId = String(formData.get("payment_id") || "");
+  if (!paymentId) backWithError("/payments", "Pick the payment this bank line belongs to.");
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("confirm_payment", { p_payment_id: paymentId, p_tx_id: txId });
+  if (error) backWithError("/payments", error.message);
+  refreshPayments();
+  redirect("/payments?ok=confirmed");
+}
+
+export async function ignoreTransaction(formData: FormData) {
+  await treasurer();
+  const txId = String(formData.get("tx_id"));
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("ignore_transaction", { p_tx_id: txId });
+  if (error) backWithError("/payments", error.message);
+  refreshPayments();
+  redirect("/payments?ok=ignored");
+}
+
+export async function restoreTransaction(formData: FormData) {
+  await treasurer();
+  const txId = String(formData.get("tx_id"));
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("restore_transaction", { p_tx_id: txId });
+  if (error) backWithError("/payments?show=other", error.message);
+  refreshPayments();
+  redirect("/payments?ok=restored");
+}
+
+export async function undoConfirmation(formData: FormData) {
+  await treasurer();
+  const paymentId = String(formData.get("payment_id"));
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("undo_confirmation", { p_payment_id: paymentId });
+  if (error) backWithError("/payments", error.message);
+  refreshPayments();
+  redirect("/payments?ok=undone");
+}
+
+/** Paste (or upload) the Nordea statement → new lines are stored once and matched automatically. */
+export async function importBank(formData: FormData) {
+  await treasurer();
+  let text = String(formData.get("rows") || "");
+  const file = formData.get("file");
+  if (file && typeof file === "object" && "arrayBuffer" in file && (file as File).size > 0) {
+    text += "\n" + decodeStatement(await (file as File).arrayBuffer());
+  }
+  const { rows, skipped } = parseNordea(text);
+  if (rows.length === 0) {
+    backWithError("/payments", skipped.length
+      ? `Couldn't read those ${skipped.length} line${skipped.length === 1 ? "" : "s"} — paste the rows as Nordea exports them (Bokföringsdag;Belopp;…;Rubrik;Saldo).`
+      : "Paste the statement lines first.");
+  }
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("import_bank_rows", { p_rows: rows });
+  if (error) backWithError("/payments", error.message);
+  const r = (data ?? {}) as { added?: number; duplicates?: number; matched?: number; suggested?: number };
+  refreshPayments();
+  redirect(`/payments?ok=imported&added=${r.added ?? 0}&dup=${r.duplicates ?? 0}&matched=${r.matched ?? 0}&sugg=${r.suggested ?? 0}&skipped=${skipped.length}`);
+}
+
+// ---- profile / settings -----------------------------------------------------
 
 export async function saveName(formData: FormData) {
   const name = String(formData.get("name") || "").trim();

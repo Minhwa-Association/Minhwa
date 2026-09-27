@@ -3,10 +3,11 @@ import { redirect } from "next/navigation";
 import { createClient, currentMember } from "@/lib/supabase/server";
 import { hasRole } from "@/lib/roles";
 import { addDays, isValidISODate, mondayOf, parseISODate, shortDate, toISODate, weekLabel, WEEKDAYS_LONG } from "@/lib/dates";
-import { confirmPaid, cancelBooking } from "@/app/actions";
+import { paymentClass } from "@/lib/payments";
+import { confirmPayment, cancelBooking } from "@/app/actions";
 import { Chevron, Notice, TopNav } from "@/app/components";
 
-type Booking = { id: string; slot_id: string; date: string; member_id: string; created_at: string; member: { name: string } | null; charge: { id: string; status: string } | null };
+type Booking = { id: string; slot_id: string; date: string; member_id: string; created_at: string; member: { name: string } | null; payment: { id: string; code: string | null; status: string } | null };
 type Slot = { id: string; weekday: number; session: "day" | "evening"; capacity: number; instructor: { name: string } | null };
 
 export default async function AdminPage({ searchParams }: { searchParams: Promise<{ week?: string; error?: string; ok?: string }> }) {
@@ -22,7 +23,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const supabase = await createClient();
   const [{ data: slots }, { data: bookings }, { data: settings }] = await Promise.all([
     supabase.from("slots").select("id, weekday, session, capacity, instructor:members!slots_instructor_id_fkey(name)").order("weekday").order("session"),
-    supabase.from("bookings").select("id, slot_id, date, member_id, created_at, member:members(name), charge:charges(id, status)")
+    supabase.from("bookings").select("id, slot_id, date, member_id, created_at, member:members(name), payment:payments(id, code, status)")
       .eq("status", "booked").gte("date", mondayISO).lte("date", fridayISO).order("created_at"),
     supabase.from("settings").select("seat_price_sek, swish_number").eq("id", 1).single(),
   ]);
@@ -42,20 +43,20 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           <span className="bold" style={{ fontSize: 14 }}>{list.length}/{slot.capacity}</span>
         </div>
         {list.map((b, i) => {
-          const st = b.charge?.status ?? "unpaid";
+          const st = b.payment?.status ?? "pending";
           const extra = i >= slot.capacity;
-          const cls = extra ? "extra" : st === "paid" ? "paid" : st === "pending" ? "pending" : "";
-          const label = st === "paid" ? "✓" : st === "pending" ? "Pending" : "Unpaid";
+          const cls = extra ? "extra" : paymentClass(st);
+          const label = st === "confirmed" ? "✓" : st === "claimed" ? "Claimed" : "Unpaid";
           return (
-            <div key={b.id} className={`aperson ${cls}`} style={{ cursor: "default" }}>
+            <div key={b.id} className={`aperson ${cls}`} style={{ cursor: "default" }} title={b.payment?.code ?? undefined}>
               <span>{b.member?.name ?? "Member"}</span>
               <span className="row" style={{ gap: 6 }}>
                 <small>{label}{extra ? " · extra" : ""}</small>
-                {st !== "paid" && b.charge && (
-                  <form action={confirmPaid}>
-                    <input type="hidden" name="charge_id" value={b.charge.id} />
+                {st !== "confirmed" && b.payment && (
+                  <form action={confirmPayment}>
+                    <input type="hidden" name="payment_id" value={b.payment.id} />
                     <input type="hidden" name="back" value={back} />
-                    <button className="btn line sm" style={{ minHeight: 28, padding: "0 8px", fontSize: 12 }} title="Mark as paid">Mark paid</button>
+                    <button className="btn line sm" style={{ minHeight: 28, padding: "0 8px", fontSize: 12 }} title="Confirm the payment (same as in Payments)">Mark paid</button>
                   </form>
                 )}
                 <form action={cancelBooking}>
@@ -77,8 +78,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   return (
     <main className="page wide">
       <div className="topbar">
-        <div><h1>Weekly board · Admin</h1><div className="muted small">Mark payments as they arrive on Swish. Full slots still take extra bookings (shown in navy).</div></div>
-        <TopNav current="admin" isAdmin showCalendar />
+        <div><h1>Weekly board · Admin</h1><div className="muted small">Green = confirmed in the bank (see <Link href="/payments" style={{ fontWeight: 600 }}>Payments</Link>). &ldquo;Mark paid&rdquo; confirms a payment by hand. Full slots still take extra bookings (navy).</div></div>
+        <TopNav current="admin" me={me} />
       </div>
       <div className="stack" style={{ gap: 16 }}>
         <Notice error={error} ok={ok} />
@@ -90,6 +91,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           </div>
           <div className="row">
             <Link href="/admin/settings" className="pill">Settings & teachers</Link>
+            <Link href="/payments" className="pill">Payments</Link>
             <Link href="/" className="pill">Member view</Link>
           </div>
         </div>
@@ -106,7 +108,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
         </div>
 
         <div className="legend">
-          <span><i className="swatch" style={{ background: "var(--green)", borderRadius: 4 }} />Paid</span>
+          <span><i className="swatch" style={{ background: "var(--green)", borderRadius: 4 }} />Paid (confirmed)</span>
           <span><i className="swatch" style={{ background: "var(--gold)", borderRadius: 4 }} />Awaiting confirmation</span>
           <span><i className="swatch" style={{ border: "1.5px dashed var(--dash)", borderRadius: 4 }} />Open seat</span>
           <span style={{ marginLeft: "auto" }}>{settings?.seat_price_sek} kr per session · Swish {settings?.swish_number}</span>
