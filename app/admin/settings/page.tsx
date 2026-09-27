@@ -2,21 +2,22 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient, currentMember } from "@/lib/supabase/server";
 import { WEEKDAYS_LONG, sessionLabel } from "@/lib/dates";
-import { addMember, setInstructor, setRole, setSlotWhatsapp, updateSettings } from "@/app/actions";
+import { addMember, setInstructor, setRoles, setSlotWhatsapp, updateSettings } from "@/app/actions";
+import { ROLES, hasRole } from "@/lib/roles";
 import { Notice, TopNav } from "@/app/components";
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ error?: string; ok?: string }> }) {
   const me = await currentMember();
   if (!me) redirect("/login");
-  if (me.role !== "admin") redirect("/");
+  if (!hasRole(me, "admin")) redirect("/");
   const { error, ok } = await searchParams;
   const supabase = await createClient();
   const [{ data: settings }, { data: slots }, { data: members }] = await Promise.all([
     supabase.from("settings").select("*").eq("id", 1).single(),
     supabase.from("slots").select("id, weekday, session, instructor_id, whatsapp_url").order("weekday").order("session"),
-    supabase.from("members").select("id, name, phone, role, auth_id").order("name"),
+    supabase.from("members").select("id, name, phone, roles, auth_id").order("name"),
   ]);
-  const teachers = (members ?? []).filter((m) => m.role === "instructor" || m.role === "admin");
+  const teachers = (members ?? []).filter((m) => hasRole(m, "teacher"));
 
   return (
     <main className="page wide">
@@ -40,7 +41,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
 
         <div className="card stack" style={{ padding: 18 }}>
           <h2>Teachers per slot</h2>
-          <div className="muted small">A teacher must be a member with the Teacher role (see Members).</div>
+          <div className="muted small">Only members ticked as Teacher (see Members) show up here.</div>
           {(slots ?? []).map((s) => (
             <form key={s.id} action={setInstructor} className="row" style={{ gap: 8 }}>
               <input type="hidden" name="slot_id" value={s.id} />
@@ -59,12 +60,13 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           <div className="muted small">Pre-register by phone. When they log in with that number for the first time, their account links to this entry automatically.</div>
           <div><label htmlFor="nm">Name</label><input id="nm" name="name" required placeholder="Anna Lind" /></div>
           <div><label htmlFor="ph">Mobile number</label><input id="ph" name="phone" type="tel" required placeholder="070 123 45 67" /></div>
-          <div><label htmlFor="rl">Role</label>
-            <select id="rl" name="role" defaultValue="member">
-              <option value="member">Member</option>
-              <option value="instructor">Teacher</option>
-              <option value="admin">Admin</option>
-            </select>
+          <div>
+            <label>Roles (optional — everyone is a member)</label>
+            <div className="checks">
+              {ROLES.map((r) => (
+                <label key={r.key} className="check"><input type="checkbox" name="roles" value={r.key} /> {r.label}</label>
+              ))}
+            </div>
           </div>
           <button className="btn ink">Add</button>
         </form>
@@ -84,16 +86,16 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
 
         <div className="card stack" style={{ padding: 18 }}>
           <h2>Members</h2>
-          <div className="muted small">Pre-registered and logged-in members. Change a role to make someone a teacher or admin.</div>
+          <div className="muted small">Everyone is a member. Tick any extra roles — one person can hold several. Teacher: can be set on a slot · Crew: prepares and runs activities · Admin: this board and settings.</div>
           {(members ?? []).map((m) => (
-            <form key={m.id} action={setRole} className="row" style={{ gap: 8 }}>
+            <form key={m.id} action={setRoles} className="memberrow">
               <input type="hidden" name="member_id" value={m.id} />
               <div className="grow"><div style={{ fontWeight: 600 }}>{m.name}</div><div className="muted small">{m.phone}{m.auth_id ? "" : " · not logged in yet"}</div></div>
-              <select name="role" defaultValue={m.role} style={{ width: 130 }}>
-                <option value="member">Member</option>
-                <option value="instructor">Teacher</option>
-                <option value="admin">Admin</option>
-              </select>
+              <div className="checks">
+                {ROLES.map((r) => (
+                  <label key={r.key} className="check"><input type="checkbox" name="roles" value={r.key} defaultChecked={hasRole(m, r.key)} /> {r.label}</label>
+                ))}
+              </div>
               <button className="btn line sm">Set</button>
             </form>
           ))}

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient, currentMember } from "@/lib/supabase/server";
+import { hasRole } from "@/lib/roles";
 import { addDays, isValidISODate, mondayOf, parseISODate, shortDate, toISODate, weekLabel, WEEKDAYS_LONG } from "@/lib/dates";
 import { confirmPaid, cancelBooking } from "@/app/actions";
 import { Chevron, Notice, TopNav } from "@/app/components";
@@ -11,7 +12,7 @@ type Slot = { id: string; weekday: number; session: "day" | "evening"; capacity:
 export default async function AdminPage({ searchParams }: { searchParams: Promise<{ week?: string; error?: string; ok?: string }> }) {
   const me = await currentMember();
   if (!me) redirect("/login");
-  if (me.role !== "admin") redirect("/");
+  if (!hasRole(me, "admin")) redirect("/");
   const { week, error, ok } = await searchParams;
   const monday = isValidISODate(week) ? mondayOf(parseISODate(week)) : mondayOf(new Date());
   const mondayISO = toISODate(monday);

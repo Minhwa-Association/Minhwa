@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient, currentMember } from "@/lib/supabase/server";
+import { hasRole, roleLabels } from "@/lib/roles";
 import { hm, longDate, parseISODate, sessionLabel, toISODate } from "@/lib/dates";
 import { cancelBooking } from "@/app/actions";
 import { ChargeTag, Notice, TopNav } from "@/app/components";
@@ -20,8 +21,8 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
   return (
     <main className="page">
       <div className="topbar">
-        <div><h1>My seats</h1><div className="muted small">{me.name}</div></div>
-        <TopNav current="me" isAdmin={me.role === "admin"} />
+        <div><h1>My seats</h1><div className="muted small">{me.name} · {roleLabels(me.roles)}</div></div>
+        <TopNav current="me" isAdmin={hasRole(me, "admin")} />
       </div>
       <div className="stack">
         <Notice error={error} ok={ok} />

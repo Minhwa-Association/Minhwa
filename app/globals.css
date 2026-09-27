@@ -126,6 +126,12 @@ h2 { font-size: 22px; }
 label { font-size: 13px; color: var(--muted); display: block; margin-bottom: 4px; }
 input, select { width: 100%; font: inherit; font-size: 16px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--ink); min-height: 48px; }
 input:focus, select:focus, .btn:focus-visible, a:focus-visible, .iconbtn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+input[type="checkbox"] { width: 20px; height: 20px; min-height: 0; padding: 0; margin: 0; border-radius: 6px; accent-color: var(--ink); flex: none; }
+.checks { display: flex; flex-wrap: wrap; gap: 6px; }
+label.check { display: inline-flex; align-items: center; gap: 8px; margin: 0; padding: 0 12px; min-height: 40px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); font-size: 14px; font-weight: 600; cursor: pointer; }
+label.check:has(input:checked) { border-color: var(--ink); }
+.memberrow { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 10px 0; border-top: 1px solid var(--divider); }
+.memberrow:first-of-type { border-top: 0; }
 input.code { font-size: 28px; letter-spacing: 0.3em; text-align: center; font-weight: 700; }
 
 /* admin grid */

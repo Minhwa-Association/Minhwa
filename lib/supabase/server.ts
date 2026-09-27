@@ -32,7 +32,7 @@ export async function currentMember() {
   if (!user) return null;
   const { data: member } = await supabase
     .from("members")
-    .select("id, name, phone, role, active")
+    .select("id, name, phone, roles, active")
     .eq("auth_id", user.id)
     .single();
   return member;

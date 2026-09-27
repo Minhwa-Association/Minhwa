@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient, currentMember } from "@/lib/supabase/server";
+import { cleanRoles, hasRole } from "@/lib/roles";
 
 function backWithError(path: string, message: string): never {
   const sep = path.includes("?") ? "&" : "?";
@@ -64,7 +65,7 @@ export async function saveName(formData: FormData) {
 
 export async function updateSettings(formData: FormData) {
   const me = await currentMember();
-  if (me?.role !== "admin") redirect("/");
+  if (!me || !hasRole(me, "admin")) redirect("/");
   const supabase = await createClient();
   const { error } = await supabase.from("settings").update({
     seat_price_sek: Number(formData.get("seat_price_sek")),
@@ -81,7 +82,7 @@ export async function updateSettings(formData: FormData) {
 
 export async function setInstructor(formData: FormData) {
   const me = await currentMember();
-  if (me?.role !== "admin") redirect("/");
+  if (!me || !hasRole(me, "admin")) redirect("/");
   const slotId = String(formData.get("slot_id"));
   const raw = String(formData.get("instructor_id") || "");
   const supabase = await createClient();
@@ -93,7 +94,7 @@ export async function setInstructor(formData: FormData) {
 
 export async function setSlotWhatsapp(formData: FormData) {
   const me = await currentMember();
-  if (me?.role !== "admin") redirect("/");
+  if (!me || !hasRole(me, "admin")) redirect("/");
   const slotId = String(formData.get("slot_id"));
   const raw = String(formData.get("whatsapp_url") || "").trim();
   if (raw && !/^https:\/\/chat\.whatsapp\.com\//.test(raw)) backWithError("/admin/settings", "Paste the group invite link (starts with https://chat.whatsapp.com/).");
@@ -104,26 +105,28 @@ export async function setSlotWhatsapp(formData: FormData) {
   redirect("/admin/settings?ok=saved");
 }
 
-export async function setRole(formData: FormData) {
+export async function setRoles(formData: FormData) {
   const me = await currentMember();
-  if (me?.role !== "admin") redirect("/");
+  if (!me || !hasRole(me, "admin")) redirect("/");
   const memberId = String(formData.get("member_id"));
-  const role = String(formData.get("role"));
+  const roles = cleanRoles(formData.getAll("roles"));
+  if (memberId === me.id && !roles.includes("admin")) backWithError("/admin/settings", "You can't remove your own Admin role — ask another admin.");
   const supabase = await createClient();
-  const { error } = await supabase.from("members").update({ role }).eq("id", memberId);
+  const { error } = await supabase.from("members").update({ roles }).eq("id", memberId);
   if (error) backWithError("/admin/settings", error.message);
+  revalidatePath("/admin/settings");
   redirect("/admin/settings?ok=saved");
 }
 
 export async function addMember(formData: FormData) {
   const me = await currentMember();
-  if (me?.role !== "admin") redirect("/");
+  if (!me || !hasRole(me, "admin")) redirect("/");
   const name = String(formData.get("name") || "").trim();
   const phone = String(formData.get("phone") || "").trim();
-  const role = String(formData.get("role") || "member");
+  const roles = cleanRoles(formData.getAll("roles"));
   if (!name || !phone) backWithError("/admin/settings", "Name and phone are required.");
   const supabase = await createClient();
-  const { error } = await supabase.rpc("admin_add_member", { p_name: name, p_phone: phone, p_role: role });
+  const { error } = await supabase.rpc("admin_add_member", { p_name: name, p_phone: phone, p_roles: roles });
   if (error) backWithError("/admin/settings", error.message);
   revalidatePath("/admin/settings");
   redirect("/admin/settings?ok=saved");
