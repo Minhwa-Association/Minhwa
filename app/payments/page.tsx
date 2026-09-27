@@ -53,7 +53,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   const showOther = q.show === "other";
 
   const supabase = await createClient();
-  const [{ data: matchedRows }, { data: waitingRows }, { data: openRows }, { data: claimedRows }, { data: confirmedRows }, { count: nOut }, { count: nIgn }, otherRes] = await Promise.all([
+  const [{ data: matchedRows }, { data: waitingRows }, { data: openRows }, { data: claimedRows }, { data: confirmedRows }, { count: nOut }, { count: nIgn }, otherRes, { count: nClaims }, { count: nToPay }] = await Promise.all([
     supabase.from("bank_transactions").select(TX_SELECT).in("status", ["matched", "suggested"]).order("booked_on", { ascending: false }).order("imported_at", { ascending: false }),
     supabase.from("bank_transactions").select(TX_SELECT).eq("status", "unmatched").gt("amount_sek", 0).order("booked_on", { ascending: false }).order("imported_at", { ascending: false }),
     supabase.from("payments_view").select("*").in("status", ["pending", "claimed"]).is("bank_tx_id", null).order("member_name").order("created_at"),
@@ -64,6 +64,8 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
     showOther
       ? supabase.from("bank_transactions").select(TX_SELECT).in("status", ["outgoing", "ignored"]).order("booked_on", { ascending: false }).limit(150)
       : Promise.resolve({ data: null }),
+    supabase.from("expense_claims").select("id", { count: "exact", head: true }).eq("status", "new"),
+    supabase.from("expense_claims").select("id", { count: "exact", head: true }).eq("status", "approved"),
   ]);
   const matched = (matchedRows ?? []) as unknown as BankTx[];
   const waiting = (waitingRows ?? []) as unknown as BankTx[];
@@ -83,6 +85,15 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
 
       <div className="stack" style={{ gap: 18 }}>
         <Notice error={q.error} ok={q.ok} text={okText(q)} />
+
+        <div className="card row between" style={{ padding: "12px 16px", flexWrap: "wrap", gap: 8 }}>
+          <div className="small">
+            <b>Receipts</b><span className="muted"> · members&apos; receipts to pay back (receipt@minhwa.org)</span>
+            {" "}<span className={`count ${(nClaims ?? 0) === 0 ? "zero" : ""}`} title="to check">{nClaims ?? 0}</span>
+            {(nToPay ?? 0) > 0 && <span className="muted small"> · {nToPay} approved, to pay</span>}
+          </div>
+          <Link href="/payments/receipts" className="btn line sm">Open Receipts</Link>
+        </div>
 
         {/* 1. paste */}
         <form action={importBank} className="card stack" style={{ padding: 18 }}>

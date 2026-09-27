@@ -58,6 +58,10 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
           );
         })}
         <div className="muted small">Cancelling is free until {settings?.cancel_deadline_days ?? 1} day{(settings?.cancel_deadline_days ?? 1) === 1 ? "" : "s"} before the session.</div>
+        <div className="card row between" style={{ padding: "12px 16px", flexWrap: "wrap", gap: 8 }}>
+          <div className="small"><b>Receipts</b><span className="muted"> · paid for something for the association? Send the receipt and get it back.</span></div>
+          <Link href="/me/receipts" className="btn line sm">Receipts</Link>
+        </div>
       </div>
     </main>
   );

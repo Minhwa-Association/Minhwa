@@ -8,6 +8,9 @@ import { isValidISODate } from "@/lib/dates";
 import { keyToAudience } from "@/lib/calendar";
 import { decodeStatement, parseNordea } from "@/lib/nordea";
 import { MAX_PHOTOS, PHOTO_BUCKET, thumbPath } from "@/lib/store";
+import { after } from "next/server";
+import { createServiceClient } from "@/lib/supabase/service";
+import { finishClaim } from "@/lib/claims-process";
 
 function backWithError(path: string, message: string): never {
   const sep = path.includes("?") ? "&" : "?";
@@ -586,6 +589,222 @@ export async function addMember(formData: FormData) {
   if (error) backWithError("/admin/settings", error.message);
   revalidatePath("/admin/settings");
   redirect("/admin/settings?ok=saved");
+}
+
+
+// ---- receipts: members' expense claims -------------------------------------------
+
+const RECEIPTS = "/payments/receipts";
+const MY_RECEIPTS = "/me/receipts";
+
+function refreshReceipts() {
+  revalidatePath(RECEIPTS);
+  revalidatePath(MY_RECEIPTS);
+  revalidatePath("/payments");
+}
+
+/** Call a claims function as the treasurer; on error go back to Receipts with the message. */
+async function claimsRpc(fn: string, args: Record<string, unknown>) {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc(fn, args);
+  if (error) backWithError(RECEIPTS, error.message);
+  refreshReceipts();
+  return data;
+}
+
+function optText(formData: FormData, key: string): string | null | undefined {
+  if (!formData.has(key)) return undefined;
+  const v = String(formData.get(key) ?? "").trim();
+  return v === "" ? null : v;
+}
+
+/** "345", "345,50", "1 234.5" → "345" / "345.50" / "1234.5"; "" → null; nonsense → error */
+function money(formData: FormData, key: string): string | null | undefined {
+  const v = optText(formData, key);
+  if (v === undefined || v === null) return v;
+  const cleaned = v.replace(/\s/g, "").replace(/kr$/i, "").replace(",", ".");
+  if (!/^-?\d+(\.\d{1,2})?$/.test(cleaned)) backWithError(RECEIPTS, `"${v}" is not an amount`);
+  return cleaned;
+}
+
+/** "Who is this?" — the treasurer ties a claim from an unknown address to a member (and remembers the address). */
+export async function linkClaimMember(formData: FormData) {
+  await treasurer();
+  const claimId = String(formData.get("claim_id"));
+  const memberId = String(formData.get("member_id") || "");
+  if (!memberId) backWithError(RECEIPTS, "Pick the member first.");
+  await claimsRpc("link_claim_member", { p_claim_id: claimId, p_member_id: memberId, p_remember: formData.get("remember") !== null });
+  redirect(`${RECEIPTS}?ok=linked`);
+}
+
+/** One form per claim: Save what was typed · Approve (with the amount) · Decline (with a reply). */
+export async function decideClaim(formData: FormData) {
+  await treasurer();
+  const claimId = String(formData.get("claim_id"));
+  const action = String(formData.get("do") || "save");
+  const fields: Record<string, unknown> = {};
+  for (const k of ["merchant", "purchased_on", "receipt_currency", "purpose", "category_code", "note"]) {
+    const v = optText(formData, k);
+    if (v !== undefined) fields[k] = v;
+  }
+  for (const k of ["receipt_total", "amount_sek", "vat_sek"]) {
+    const v = money(formData, k);
+    if (v !== undefined) fields[k] = v;
+  }
+  if (typeof fields.purchased_on === "string" && !isValidISODate(fields.purchased_on)) backWithError(RECEIPTS, "The date should be YYYY-MM-DD.");
+  if (formData.get("not_duplicate") !== null) fields.not_duplicate = true;
+  const supabase = await createClient();
+  if (action !== "decline") {
+    const { error } = await supabase.rpc("review_claim", { p_claim_id: claimId, p: fields });
+    if (error) backWithError(RECEIPTS, error.message);
+  }
+  if (action === "approve") {
+    const amount = money(formData, "amount_sek");
+    if (!amount) backWithError(RECEIPTS, "Type the amount to pay back before approving.");
+    const { error } = await supabase.rpc("approve_claim", { p_claim_id: claimId, p_amount_sek: Number(amount), p_category_code: fields.category_code ?? null, p_reply: optText(formData, "reply") ?? null });
+    if (error) backWithError(RECEIPTS, error.message);
+    refreshReceipts();
+    redirect(`${RECEIPTS}?ok=approved`);
+  }
+  if (action === "decline") {
+    const { error } = await supabase.rpc("decline_claim", { p_claim_id: claimId, p_reply: optText(formData, "reply") ?? null });
+    if (error) backWithError(RECEIPTS, error.message);
+    refreshReceipts();
+    redirect(`${RECEIPTS}?ok=declined`);
+  }
+  refreshReceipts();
+  redirect(`${RECEIPTS}?ok=saved`);
+}
+
+export async function reopenClaim(formData: FormData) {
+  await treasurer();
+  await claimsRpc("reopen_claim", { p_claim_id: String(formData.get("claim_id")) });
+  redirect(`${RECEIPTS}?ok=reopened`);
+}
+
+/** Paid — with the suggested bank line, or by hand with a date. */
+export async function markClaimPaid(formData: FormData) {
+  await treasurer();
+  const claimId = String(formData.get("claim_id"));
+  const txId = String(formData.get("tx_id") || "") || null;
+  const paidOn = String(formData.get("paid_on") || "") || null;
+  if (paidOn && !isValidISODate(paidOn)) backWithError(RECEIPTS, "The date should be YYYY-MM-DD.");
+  await claimsRpc("mark_claim_paid", { p_claim_id: claimId, p_tx_id: txId, p_paid_on: paidOn });
+  redirect(`${RECEIPTS}?ok=claim_paid`);
+}
+
+export async function unpayClaim(formData: FormData) {
+  await treasurer();
+  await claimsRpc("unpay_claim", { p_claim_id: String(formData.get("claim_id")) });
+  redirect(`${RECEIPTS}?ok=claim_unpaid`);
+}
+
+export async function rejectClaimSuggestion(formData: FormData) {
+  await treasurer();
+  await claimsRpc("reject_claim_suggestion", { p_claim_id: String(formData.get("claim_id")) });
+  redirect(`${RECEIPTS}?ok=rejected`);
+}
+
+/** Look through the outgoing bank lines already imported for approved claims. */
+export async function findClaimsInBank() {
+  await treasurer();
+  const data = (await claimsRpc("match_claims_to_bank", {})) as { suggested?: number } | null;
+  redirect(`${RECEIPTS}?ok=looked&n=${data?.suggested ?? 0}`);
+}
+
+/** Read the receipt again with Claude (overwrites the reading; the treasurer's own typing stays where the reader has nothing). */
+export async function rereadClaim(formData: FormData) {
+  await treasurer();
+  const claimId = String(formData.get("claim_id"));
+  let r: Awaited<ReturnType<typeof finishClaim>>;
+  try { r = await finishClaim(claimId, { sendAck: false, force: true }); }
+  catch (e) { backWithError(RECEIPTS, e instanceof Error ? e.message : "Could not read the receipt"); }
+  refreshReceipts();
+  redirect(`${RECEIPTS}?ok=${r.read ? "reread" : "reread_failed"}${r.note ? `&note=${encodeURIComponent(r.note)}` : ""}`);
+}
+
+/** Send the "received" reply by hand — for a claim that was linked to its member after it came in. */
+export async function sendClaimAck(formData: FormData) {
+  await treasurer();
+  const claimId = String(formData.get("claim_id"));
+  let r: Awaited<ReturnType<typeof finishClaim>>;
+  try { r = await finishClaim(claimId, { sendAck: true }); }
+  catch (e) { backWithError(RECEIPTS, e instanceof Error ? e.message : "Could not send the reply"); }
+  refreshReceipts();
+  redirect(`${RECEIPTS}?ok=${r.acked ? "acked" : "ack_skipped"}`);
+}
+
+// ---- receipts: member side ---------------------------------------------------------
+
+export async function saveBankAccount(formData: FormData) {
+  const me = await currentMember();
+  if (!me) redirect("/login");
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("save_bank_account", {
+    p_clearing: String(formData.get("clearing") || ""),
+    p_account: String(formData.get("account") || ""),
+    p_bank: String(formData.get("bank") || "") || null,
+    p_holder: String(formData.get("holder") || "") || null,
+  });
+  if (error) backWithError(MY_RECEIPTS, error.message);
+  refreshReceipts();
+  redirect(`${MY_RECEIPTS}?ok=account_saved`);
+}
+
+export async function saveMyEmails(formData: FormData) {
+  const me = await currentMember();
+  if (!me) redirect("/login");
+  const emails = String(formData.get("emails") || "").split(/[\s,;]+/).map((e) => e.trim()).filter(Boolean);
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("set_my_extra_emails", { p_emails: emails });
+  if (error) backWithError(MY_RECEIPTS, error.message);
+  refreshReceipts();
+  redirect(`${MY_RECEIPTS}?ok=emails_saved`);
+}
+
+type ClaimStart = { ok: true; claimId: string; code: string } | { error: string };
+type ClaimFinish = { ok: true } | { error: string };
+
+/** The app's upload, step 1: make the claim (the pictures follow from the browser, straight into the bucket). */
+export async function startReceiptClaim(purpose: string): Promise<ClaimStart> {
+  const me = await currentMember();
+  if (!me) return { error: "Log in first" };
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("import_claim", { p: { source: "app", body_text: purpose.trim().slice(0, 2000) || null, subject: "Uploaded in the app", files: [] } });
+  if (error) return { error: error.message };
+  const r = data as { claim_id: string; code: string };
+  return { ok: true, claimId: r.claim_id, code: r.code };
+}
+
+/** Step 2: the files are in the bucket — record them, then read the receipt in the background (no reply mail: the member sees it here). */
+export async function finishReceiptClaim(claimId: string, files: { path: string; filename: string; content_type: string; bytes: number; sha256: string }[]): Promise<ClaimFinish> {
+  const me = await currentMember();
+  if (!me) return { error: "Log in first" };
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("add_claim_files", { p_claim_id: claimId, p_files: files });
+  if (error) return { error: error.message };
+  after(async () => {
+    try { await finishClaim(claimId, { sendAck: false }); }
+    catch (e) { console.error("finishClaim (app)", claimId, e instanceof Error ? e.message : e); }
+  });
+  refreshReceipts();
+  return { ok: true };
+}
+
+/** A member takes back a receipt that is still being checked (nothing has been paid). */
+export async function withdrawReceiptClaim(formData: FormData) {
+  const me = await currentMember();
+  if (!me) redirect("/login");
+  const claimId = String(formData.get("claim_id"));
+  const service = createServiceClient();
+  const { data: c } = await service.from("expense_claims").select("id, member_id, status").eq("id", claimId).single();
+  if (!c || c.member_id !== me.id) backWithError(MY_RECEIPTS, "Not your receipt.");
+  if (c.status !== "new") backWithError(MY_RECEIPTS, "The treasurer has already handled this one — ask them directly.");
+  const { data: files } = await service.from("claim_files").select("path").eq("claim_id", claimId);
+  if (files?.length) await service.storage.from("receipts").remove(files.map((f) => f.path));
+  await service.from("expense_claims").delete().eq("id", claimId);
+  refreshReceipts();
+  redirect(`${MY_RECEIPTS}?ok=withdrawn`);
 }
 
 // ---- calendar ---------------------------------------------------------------

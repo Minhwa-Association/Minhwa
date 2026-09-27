@@ -250,3 +250,23 @@ input.qty { width: 64px; min-height: 40px; padding: 6px 8px; text-align: center;
   .quote { grid-template-columns: 1fr 1fr; }
   .quote input[name="name"] { grid-column: 1 / -1; }
 }
+
+/* ---- receipts (v13) ---- */
+.claim { display: grid; grid-template-columns: 1fr; gap: 12px; padding: 14px 0; border-top: 1px solid var(--divider); }
+.claim:first-of-type { border-top: 0; }
+@media (min-width: 720px) { .claim { grid-template-columns: 120px minmax(0, 1fr); } }
+.cfiles { display: flex; flex-wrap: wrap; gap: 6px; align-content: flex-start; }
+.cfile { display: block; width: 112px; height: 112px; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); background: var(--bg); }
+.cfile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cdoc { display: flex; width: 100%; height: 100%; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; color: var(--muted); letter-spacing: 0.04em; }
+.cform { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 10px; }
+@media (min-width: 720px) { .cform { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.cform label { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--muted); margin: 0; min-width: 0; }
+.cform label.wide { grid-column: 1 / -1; }
+.cform label.strong { color: var(--ink); font-weight: 600; }
+.cform input, .cform select, .cform textarea { min-height: 38px; padding: 6px 10px; font-size: 14px; }
+.cbtns { grid-column: 1 / -1; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.payout { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px 16px; padding: 10px 12px; border-radius: 10px; background: var(--bg); font-size: 14px; }
+.sugg { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; padding: 8px 12px; border-radius: 10px; background: var(--gold); border: 1px solid var(--gold-line); }
+.mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; }
+.amt { font-family: "Fraunces", Georgia, serif; font-size: 18px; font-weight: 600; white-space: nowrap; }

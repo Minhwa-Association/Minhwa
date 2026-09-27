@@ -40,5 +40,6 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.svg|manifest.json|cal/).*)"],
+  // api/inbound/ is called by Resend with a signature, not by a logged-in person
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|icon.svg|manifest.json|cal/|api/inbound/).*)"],
 };

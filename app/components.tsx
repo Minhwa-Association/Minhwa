@@ -65,6 +65,18 @@ export function Notice({ error, ok, text }: { error?: string; ok?: string; text?
   if (ok === "refunded") return <div className="notice ok">Line marked as refunded.</div>;
   if (ok === "requested") return <div className="notice ok">Request sent — the treasurer will look at it and you will see the answer here.</div>;
   if (ok === "quoted") return <div className="notice ok">Quote sent — the member now has an order to pay under My orders. Once paid it goes on the group order like any other line.</div>;
+  if (ok === "linked") return <div className="notice ok">Linked to the member — mails from that address will find them from now on.</div>;
+  if (ok === "approved") return <div className="notice ok">Approved. Pay it from the bank, then tick it here — or paste the statement and the line is found for you.</div>;
+  if (ok === "declined") return <div className="notice ok">Declined — the member sees your reply in the app.</div>;
+  if (ok === "reopened") return <div className="notice ok">Back in the list to check.</div>;
+  if (ok === "claim_paid") return <div className="notice ok">Marked as paid.</div>;
+  if (ok === "claim_unpaid") return <div className="notice ok">Taken back — the claim is approved and waiting for its payment again.</div>;
+  if (ok === "acked") return <div className="notice ok">&ldquo;Received&rdquo; reply sent to the member.</div>;
+  if (ok === "ack_skipped") return <div className="notice ok">No reply sent — it was already sent, or the claim has no member or no sending address.</div>;
+  if (ok === "account_saved") return <div className="notice ok">Bank account saved. The treasurer sees it only when paying you back.</div>;
+  if (ok === "emails_saved") return <div className="notice ok">Addresses saved — receipts sent from them will be yours.</div>;
+  if (ok === "receipt_sent") return <div className="notice ok">Receipt sent to the treasurer. You will see the answer here.</div>;
+  if (ok === "withdrawn") return <div className="notice ok">Receipt taken back.</div>;
   return null;
 }
 
