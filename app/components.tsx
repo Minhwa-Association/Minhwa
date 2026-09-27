@@ -22,13 +22,14 @@ export function Check() {
 
 type Me = { roles?: string[] | null } | null | undefined;
 
-/** Tabs follow the roles: everyone Board · My seats; Crew/Admin + Calendar; Treasurer/Admin + Payments; Admin + Admin. */
-export function TopNav({ current, me }: { current: "board" | "me" | "calendar" | "payments" | "admin"; me: Me }) {
+/** Tabs follow the roles: everyone Board · My seats · Store; Crew/Admin + Calendar; Treasurer/Admin + Payments; Admin + Admin. */
+export function TopNav({ current, me }: { current: "board" | "me" | "store" | "calendar" | "payments" | "admin"; me: Me }) {
   const pill = (key: typeof current) => `pill ${current === key ? "active" : ""}`;
   return (
     <nav className="nav" aria-label="Main">
       <Link href="/" className={pill("board")}>Board</Link>
       <Link href="/me" className={pill("me")}>My seats</Link>
+      <Link href="/store" className={pill("store")}>Store</Link>
       {canUseCalendar(me) && <Link href="/calendar" className={pill("calendar")}>Calendar</Link>}
       {canUsePayments(me) && <Link href="/payments" className={pill("payments")}>Payments</Link>}
       {hasRole(me, "admin") && <Link href="/admin" className={pill("admin")}>Admin</Link>}
@@ -51,6 +52,12 @@ export function Notice({ error, ok, text }: { error?: string; ok?: string; text?
   if (ok === "rejected") return <div className="notice ok">Suggestion removed — the bank line is waiting again.</div>;
   if (ok === "ignored") return <div className="notice ok">Bank line set aside.</div>;
   if (ok === "restored") return <div className="notice ok">Bank line is back in the waiting list.</div>;
+  if (ok === "order_paid") return <div className="notice ok">Thanks — marked as awaiting confirmation. The treasurer confirms it when it shows up in the bank, then prepares your items.</div>;
+  if (ok === "order_cancelled") return <div className="notice ok">Order cancelled.</div>;
+  if (ok === "product_added") return <div className="notice ok">Product added.</div>;
+  if (ok === "stock") return <div className="notice ok">Stock updated.</div>;
+  if (ok === "handed") return <div className="notice ok">Taken from stock — the member sees it as ready to collect.</div>;
+  if (ok === "collected") return <div className="notice ok">Marked as collected.</div>;
   return null;
 }
 

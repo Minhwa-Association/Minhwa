@@ -44,14 +44,17 @@ export type PaymentRow = {
   bank_tx_id: string | null;
   bank_date: string | null;
   bank_name: string | null;
+  order_id?: string | null;          // v9: material payments
+  items_summary?: string | null;     // v9: "2× Barim brush · S · 백산, 1× Hanji, lacquered"
 };
 
-/** "05/10 Mon Day" for a seat payment, otherwise the Swish message without its code */
-export function describePayment(p: Pick<PaymentRow, "kind" | "booking_date" | "session" | "note" | "code">): string {
+/** "05/10 Mon Day" for a seat · "Store · 2× Barim brush…" for an order · otherwise the Swish message without its code */
+export function describePayment(p: Pick<PaymentRow, "kind" | "booking_date" | "session" | "note" | "code"> & { items_summary?: string | null }): string {
   if (p.kind === "seat" && p.booking_date && p.session) {
     const d = parseISODate(p.booking_date);
     return `${shortDate(d)} ${dayShort(d)} ${sessionLabel(p.session)}`;
   }
+  if (p.kind === "material") return `Store · ${p.items_summary ?? "order"}`;
   const note = p.note ?? "";
   return p.code && note.startsWith(p.code) ? note.slice(p.code.length).trim() : note;
 }

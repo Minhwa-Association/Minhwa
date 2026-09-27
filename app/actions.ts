@@ -45,12 +45,14 @@ export async function cancelBooking(formData: FormData) {
 /** "I have paid" — the payment waits for the treasurer to see it in the bank. */
 export async function claimPayment(formData: FormData) {
   const paymentId = String(formData.get("payment_id"));
+  const back = String(formData.get("back") || "/me");
   const supabase = await createClient();
   const { error } = await supabase.rpc("claim_payment", { p_payment_id: paymentId });
-  if (error) backWithError("/me", error.message);
+  if (error) backWithError(back, error.message);
   revalidatePath("/me");
+  revalidatePath("/store/orders");
   revalidatePath("/payments");
-  redirect("/me?ok=paid");
+  redirect(withOk(back, back.startsWith("/store") ? "order_paid" : "paid"));
 }
 
 // ---- payments: treasurer / admin -------------------------------------------
@@ -166,6 +168,132 @@ export async function importBank(formData: FormData) {
   const r = (data ?? {}) as { added?: number; duplicates?: number; matched?: number; suggested?: number };
   refreshPayments();
   redirect(`/payments?ok=imported&added=${r.added ?? 0}&dup=${r.duplicates ?? 0}&matched=${r.matched ?? 0}&sugg=${r.suggested ?? 0}&skipped=${skipped.length}`);
+}
+
+// ---- store: member side -----------------------------------------------------
+
+/** The Store form: one qty_<productId> field per product → one order, one payment (code O…). */
+export async function placeOrder(formData: FormData) {
+  const me = await currentMember();
+  if (!me) redirect("/login");
+  const items: { product_id: string; qty: number }[] = [];
+  for (const [key, value] of formData.entries()) {
+    if (!key.startsWith("qty_")) continue;
+    const qty = Math.floor(Number(value));
+    if (Number.isFinite(qty) && qty > 0) items.push({ product_id: key.slice(4), qty: Math.min(qty, 99) });
+  }
+  if (items.length === 0) backWithError("/store", "Choose at least one item — enter how many you want.");
+  const note = String(formData.get("note") || "").trim() || null;
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("place_order", { p_items: items, p_note: note });
+  if (error) backWithError("/store", error.message);
+  revalidatePath("/store");
+  revalidatePath("/store/orders");
+  revalidatePath("/payments");
+  redirect(`/store/orders/${data}`);
+}
+
+export async function cancelOrder(formData: FormData) {
+  const orderId = String(formData.get("order_id"));
+  const back = String(formData.get("back") || "/store/orders");
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("cancel_order", { p_order_id: orderId });
+  if (error) backWithError(back, error.message);
+  revalidatePath("/store/orders");
+  revalidatePath("/store/admin");
+  revalidatePath("/payments");
+  redirect(withOk(back, "order_cancelled"));
+}
+
+// ---- store: treasurer / admin -----------------------------------------------
+
+function refreshStore() {
+  revalidatePath("/store");
+  revalidatePath("/store/admin");
+  revalidatePath("/store/orders");
+  revalidatePath("/payments");
+}
+
+function readProductForm(formData: FormData) {
+  const price = Math.round(Number(formData.get("price_sek")));
+  const minStock = Math.round(Number(formData.get("min_stock")));
+  return {
+    category: String(formData.get("category") || "").trim(),
+    subcategory: String(formData.get("subcategory") || "").trim() || null,
+    name: String(formData.get("name") || "").trim(),
+    variant: String(formData.get("variant") || "").trim() || null,
+    maker: String(formData.get("maker") || "").trim() || null,
+    price_sek: Number.isFinite(price) && price >= 0 ? price : NaN,
+    min_stock: Number.isFinite(minStock) && minStock >= 0 ? minStock : 5,
+    active: formData.get("active") === "on",
+    notes: String(formData.get("notes") || "").trim() || null,
+  };
+}
+
+export async function saveProduct(formData: FormData) {
+  await treasurer();
+  const id = String(formData.get("product_id"));
+  const row = readProductForm(formData);
+  if (!row.name) backWithError("/store/admin", "The product needs a name.");
+  if (!row.category) backWithError("/store/admin", "Pick a category.");
+  if (Number.isNaN(row.price_sek)) backWithError("/store/admin", "Enter the price in whole kronor.");
+  const supabase = await createClient();
+  const { error } = await supabase.from("products").update(row).eq("id", id);
+  if (error) backWithError("/store/admin", error.message);
+  refreshStore();
+  redirect("/store/admin?ok=saved");
+}
+
+export async function addProduct(formData: FormData) {
+  await treasurer();
+  const row = readProductForm(formData);
+  const code = String(formData.get("code") || "").trim() || row.name;
+  const opening = Math.round(Number(formData.get("opening_stock") || 0));
+  if (!row.name) backWithError("/store/admin", "The product needs a name.");
+  if (!row.category) backWithError("/store/admin", "Pick a category.");
+  if (Number.isNaN(row.price_sek)) backWithError("/store/admin", "Enter the price in whole kronor.");
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("products").insert({ ...row, code }).select("id").single();
+  if (error) backWithError("/store/admin", error.code === "23505" ? `There is already a product with the code "${code}".` : error.message);
+  if (Number.isFinite(opening) && opening > 0) {
+    const { error: e2 } = await supabase.rpc("adjust_stock", { p_product_id: data.id, p_qty: opening, p_note: "Opening stock" });
+    if (e2) backWithError("/store/admin", e2.message);
+  }
+  refreshStore();
+  redirect("/store/admin?ok=product_added");
+}
+
+export async function adjustStock(formData: FormData) {
+  await treasurer();
+  const productId = String(formData.get("product_id"));
+  const qty = Math.round(Number(formData.get("qty")));
+  const note = String(formData.get("note") || "").trim() || null;
+  if (!Number.isFinite(qty) || qty === 0) backWithError("/store/admin", "Enter how many to add (+) or take away (−).");
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("adjust_stock", { p_product_id: productId, p_qty: qty, p_note: note });
+  if (error) backWithError("/store/admin", error.message);
+  refreshStore();
+  redirect("/store/admin?ok=stock");
+}
+
+export async function fulfilFromStock(formData: FormData) {
+  await treasurer();
+  const itemId = String(formData.get("item_id"));
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("fulfil_from_stock", { p_item_id: itemId });
+  if (error) backWithError("/store/admin", error.message);
+  refreshStore();
+  redirect("/store/admin?ok=handed");
+}
+
+export async function markCollected(formData: FormData) {
+  await treasurer();
+  const itemId = String(formData.get("item_id"));
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("mark_collected", { p_item_id: itemId });
+  if (error) backWithError("/store/admin", error.message);
+  refreshStore();
+  redirect("/store/admin?ok=collected");
 }
 
 // ---- profile / settings -----------------------------------------------------
