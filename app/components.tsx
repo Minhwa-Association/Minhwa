@@ -58,6 +58,12 @@ export function Notice({ error, ok, text }: { error?: string; ok?: string; text?
   if (ok === "stock") return <div className="notice ok">Stock updated.</div>;
   if (ok === "handed") return <div className="notice ok">Taken from stock — the member sees it as ready to collect.</div>;
   if (ok === "collected") return <div className="notice ok">Marked as collected.</div>;
+  if (ok === "batch_started") return <div className="notice ok">Group order started. Put the waiting lines on it and add restock.</div>;
+  if (ok === "batch_line") return <div className="notice ok">Line put on the group order.</div>;
+  if (ok === "batch_ordered") return <div className="notice ok">Marked as ordered — the list is frozen. Tick &ldquo;Arrived&rdquo; when the boxes are here.</div>;
+  if (ok === "batch_arrived") return <div className="notice ok">Arrived — stock booked in, members&apos; items are ready to collect.</div>;
+  if (ok === "refunded") return <div className="notice ok">Line marked as refunded.</div>;
+  if (ok === "requested") return <div className="notice ok">Request sent — the treasurer will look at it and you will see the answer here.</div>;
   return null;
 }
 

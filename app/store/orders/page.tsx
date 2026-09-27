@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient, currentMember } from "@/lib/supabase/server";
 import { shortDate } from "@/lib/dates";
 import { kr } from "@/lib/payments";
-import { ORDER_STATUS_LABEL, orderClass, orderTitle, type OrderRow } from "@/lib/store";
+import { ORDER_STATUS_LABEL, REQUEST_STATUS_LABEL, orderClass, orderTitle, productLabel, type OrderRow, type RequestRow } from "@/lib/store";
 import { cancelOrder } from "@/app/actions";
 import { Notice, TopNav } from "@/app/components";
 
@@ -12,8 +12,12 @@ export default async function MyOrdersPage({ searchParams }: { searchParams: Pro
   if (!me) redirect("/login");
   const { error, ok } = await searchParams;
   const supabase = await createClient();
-  const { data } = await supabase.from("orders_view").select("*").eq("member_id", me.id).order("created_at", { ascending: false }).limit(50);
+  const [{ data }, { data: reqRows }] = await Promise.all([
+    supabase.from("orders_view").select("*").eq("member_id", me.id).order("created_at", { ascending: false }).limit(50),
+    supabase.from("requests_view").select("*").eq("member_id", me.id).order("created_at", { ascending: false }).limit(20),
+  ]);
   const orders = (data ?? []) as OrderRow[];
+  const requests = (reqRows ?? []) as RequestRow[];
   const open = orders.filter((o) => o.status === "awaiting_payment" || o.status === "in_progress" || o.status === "ready");
   const done = orders.filter((o) => !open.includes(o));
 
@@ -54,6 +58,24 @@ export default async function MyOrdersPage({ searchParams }: { searchParams: Pro
         {open.map(card)}
         {done.length > 0 && <div className="muted small" style={{ marginTop: 8 }}>Earlier</div>}
         {done.map(card)}
+
+        {requests.length > 0 && (
+          <section className="stack" style={{ gap: 8, marginTop: 12 }}>
+            <div className="bold">My requests</div>
+            {requests.map((r) => (
+              <div key={r.id} className="card stack" style={{ gap: 4 }}>
+                <div className="row between" style={{ alignItems: "flex-start", gap: 8 }}>
+                  <div className="prewrap" style={{ minWidth: 0 }}>{r.text}</div>
+                  <span className={`tag ${r.status === "added" ? "paid" : r.status === "open" ? "pending" : "unpaid"}`}>{REQUEST_STATUS_LABEL[r.status]}</span>
+                </div>
+                <div className="muted small">{shortDate(new Date(r.created_at))}{r.reply ? ` · ${r.reply}` : ""}</div>
+                {r.status === "added" && r.product_name && (
+                  <div className="small">Now on the list: <Link href="/store" style={{ fontWeight: 600, color: "var(--red)" }}>{productLabel({ name: r.product_name, variant: r.product_variant, maker: r.product_maker })}</Link>{r.product_active ? "" : " (not on the list right now)"}</div>
+                )}
+              </div>
+            ))}
+          </section>
+        )}
       </div>
     </main>
   );

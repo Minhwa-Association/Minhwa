@@ -287,6 +287,128 @@ export async function fulfilFromStock(formData: FormData) {
   redirect("/store/admin?ok=handed");
 }
 
+// ---- store: group orders from Korea (step 2b) --------------------------------
+
+const ADMIN = "/store/admin";
+
+/** Call a store function as the treasurer; on error go back to Manage with the message. */
+async function storeRpc(fn: string, args: Record<string, unknown>) {
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc(fn, args);
+  if (error) backWithError(ADMIN, error.message);
+  refreshStore();
+  return data;
+}
+
+export async function startBatch(formData: FormData) {
+  await treasurer();
+  const name = String(formData.get("name") || "").trim();
+  await storeRpc("start_batch", { p_name: name });
+  redirect(`${ADMIN}?ok=batch_started`);
+}
+
+export async function addLineToBatch(formData: FormData) {
+  await treasurer();
+  await storeRpc("add_line_to_batch", { p_item_id: String(formData.get("item_id")) });
+  redirect(`${ADMIN}?ok=batch_line`);
+}
+
+export async function addAllWaitingToBatch() {
+  await treasurer();
+  const n = await storeRpc("add_all_waiting_to_batch", {});
+  redirect(`${ADMIN}?ok=batch_lines&n=${Number(n) || 0}`);
+}
+
+export async function removeLineFromBatch(formData: FormData) {
+  await treasurer();
+  await storeRpc("remove_line_from_batch", { p_item_id: String(formData.get("item_id")) });
+  redirect(`${ADMIN}?ok=saved`);
+}
+
+export async function setRestock(formData: FormData) {
+  await treasurer();
+  const qty = Math.round(Number(formData.get("restock_qty")));
+  const costRaw = String(formData.get("unit_cost_krw") || "").replace(/[^0-9.]/g, "");
+  if (!Number.isFinite(qty) || qty < 0) backWithError(ADMIN, "Restock must be 0 or more.");
+  await storeRpc("set_restock", {
+    p_batch_id: String(formData.get("batch_id")),
+    p_product_id: String(formData.get("product_id")),
+    p_qty: qty,
+    p_unit_cost_krw: costRaw ? Number(costRaw) : null,
+  });
+  redirect(`${ADMIN}?ok=saved`);
+}
+
+export async function suggestRestock(formData: FormData) {
+  await treasurer();
+  const n = await storeRpc("suggest_restock", { p_batch_id: String(formData.get("batch_id")) });
+  redirect(`${ADMIN}?ok=restock&n=${Number(n) || 0}`);
+}
+
+export async function saveBatchCosts(formData: FormData) {
+  await treasurer();
+  const num = (k: string) => { const v = String(formData.get(k) || "").replace(/[^0-9.,-]/g, "").replace(",", "."); return v ? Number(v) : 0; };
+  const fxRaw = String(formData.get("fx_sek_per_krw") || "").replace(",", ".").trim();
+  await storeRpc("save_batch_costs", {
+    p_batch_id: String(formData.get("batch_id")),
+    p_cost_krw: Math.round(num("cost_krw")),
+    p_fx: fxRaw ? Number(fxRaw) : null,
+    p_shipping: Math.round(num("shipping_sek")),
+    p_customs: Math.round(num("customs_sek")),
+    p_vat: Math.round(num("vat_sek")),
+    p_notes: String(formData.get("notes") || ""),
+  });
+  redirect(`${ADMIN}?ok=saved`);
+}
+
+export async function markBatchOrdered(formData: FormData) {
+  await treasurer();
+  await storeRpc("mark_batch_ordered", { p_batch_id: String(formData.get("batch_id")) });
+  redirect(`${ADMIN}?ok=batch_ordered`);
+}
+
+export async function markBatchArrived(formData: FormData) {
+  await treasurer();
+  await storeRpc("mark_batch_arrived", { p_batch_id: String(formData.get("batch_id")) });
+  redirect(`${ADMIN}?ok=batch_arrived`);
+}
+
+export async function refundLine(formData: FormData) {
+  await treasurer();
+  await storeRpc("refund_order_item", { p_item_id: String(formData.get("item_id")), p_note: String(formData.get("note") || "") || null });
+  redirect(`${ADMIN}?ok=refunded`);
+}
+
+// ---- store: requests -----------------------------------------------------------
+
+export async function createRequest(formData: FormData) {
+  const me = await currentMember();
+  if (!me) redirect("/login");
+  const text = String(formData.get("text") || "").trim();
+  if (text.length < 3) backWithError("/store", "Tell us what you are looking for.");
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("create_request", { p_text: text });
+  if (error) backWithError("/store", error.message);
+  revalidatePath("/store");
+  revalidatePath("/store/orders");
+  revalidatePath(ADMIN);
+  redirect("/store/orders?ok=requested");
+}
+
+export async function decideRequest(formData: FormData) {
+  await treasurer();
+  const status = String(formData.get("status") || "");
+  const productId = String(formData.get("product_id") || "") || null;
+  if (status === "added" && !productId) backWithError(ADMIN, "Pick the product you added for this request.");
+  await storeRpc("decide_request", {
+    p_id: String(formData.get("request_id")),
+    p_status: status,
+    p_product_id: productId,
+    p_reply: String(formData.get("reply") || "") || null,
+  });
+  redirect(`${ADMIN}?ok=saved`);
+}
+
 // ---- store: product photos (the browser uploads the files; these only record the paths) ----
 
 type PhotoResult = { ok: true; photos: string[] } | { error: string };

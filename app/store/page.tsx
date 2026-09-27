@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient, currentMember } from "@/lib/supabase/server";
 import { canUsePayments } from "@/lib/roles";
 import { availability, groupProducts, photoUrl, productLabel, type Product } from "@/lib/store";
-import { placeOrder } from "@/app/actions";
+import { createRequest, placeOrder } from "@/app/actions";
 import { Notice, TopNav } from "@/app/components";
 
 export default async function StorePage({ searchParams }: { searchParams: Promise<{ error?: string; ok?: string }> }) {
@@ -76,6 +76,12 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
             <button className="btn red">Order &amp; pay with Swish</button>
             <div className="muted small" style={{ textAlign: "center" }}>Swish to {settings?.swish_payee_name ?? "the association"} opens on the next page with the total and a payment code.</div>
           </div>
+        </form>
+
+        <form action={createRequest} className="card stack" style={{ padding: 16, marginTop: 8 }}>
+          <div><div className="bold">Something missing?</div><div className="muted small">Ask for a material that is not on the list. The treasurer answers under My orders — and adds it to the Store if it can be bought in Korea.</div></div>
+          <textarea name="text" rows={2} maxLength={500} required minLength={3} placeholder="e.g. gold leaf sheets for outlines, or a larger backing paper" />
+          <button className="btn line sm" style={{ alignSelf: "flex-start" }}>Send request</button>
         </form>
       </div>
     </main>

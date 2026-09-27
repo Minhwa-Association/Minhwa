@@ -5,7 +5,8 @@ import { canUsePayments } from "@/lib/roles";
 import { longDate } from "@/lib/dates";
 import { kr } from "@/lib/payments";
 import { formatSwishNumber, swishUrl } from "@/lib/swish";
-import { LINE_STATUS_LABEL, ORDER_STATUS_LABEL, orderTitle, type OrderItem, type OrderRow } from "@/lib/store";
+import { LINE_STATUS_LABEL, ORDER_STATUS_LABEL, orderTitle, type BatchPublic, type OrderItem, type OrderRow } from "@/lib/store";
+import { shortDate } from "@/lib/dates";
 import { cancelOrder, claimPayment } from "@/app/actions";
 import { Chevron, Notice } from "@/app/components";
 
@@ -25,9 +26,23 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   const mine = o.member_id === me.id;
   if (!mine && !canUsePayments(me)) notFound();
   const lines = (items ?? []) as OrderItem[];
-  const { data: payment } = o.payment_id
-    ? await supabase.from("payments").select("id, code, note, amount_sek, status").eq("id", o.payment_id).single()
-    : { data: null };
+  const batchIds = [...new Set(lines.map((l) => l.batch_id).filter((x): x is string => !!x))];
+  const [{ data: payment }, { data: batchRows }] = await Promise.all([
+    o.payment_id
+      ? supabase.from("payments").select("id, code, note, amount_sek, status").eq("id", o.payment_id).single()
+      : Promise.resolve({ data: null }),
+    batchIds.length
+      ? supabase.from("group_orders_public").select("*").in("id", batchIds)
+      : Promise.resolve({ data: [] as BatchPublic[] }),
+  ]);
+  const batchById = new Map(((batchRows ?? []) as BatchPublic[]).map((b) => [b.id, b]));
+  const lineStatus = (l: OrderItem) => {
+    if (l.status === "group_buy" && l.batch_id && batchById.get(l.batch_id)) {
+      const b = batchById.get(l.batch_id)!;
+      return `${LINE_STATUS_LABEL[l.status]} · ${b.name}${b.status === "ordered" && b.ordered_at ? ` · ordered ${shortDate(new Date(b.ordered_at))}, on its way` : ""}`;
+    }
+    return LINE_STATUS_LABEL[l.status];
+  };
 
   const payee = settings?.swish_number ?? "";
   const message = payment?.note ?? `${o.code ?? ""} Store ${o.member_name}`.trim();
@@ -61,7 +76,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
           <div className="divider" />
           {lines.map((l) => (
             <div key={l.id} className="kv" style={{ alignItems: "flex-start" }}>
-              <span className="k" style={{ color: "var(--ink)" }}>{l.qty}× {l.name}<br /><span className="muted small">{LINE_STATUS_LABEL[l.status]}</span></span>
+              <span className="k" style={{ color: "var(--ink)" }}>{l.qty}× {l.name}<br /><span className="muted small">{lineStatus(l)}</span></span>
               <span className="v">{kr(l.qty * l.unit_price_sek)}</span>
             </div>
           ))}

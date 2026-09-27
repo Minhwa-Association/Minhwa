@@ -133,3 +133,87 @@ export function orderClass(s: OrderRow["status"]): "paid" | "pending" | "" {
 export function orderTitle(o: Pick<OrderRow, "code">): string {
   return o.code ? `Order ${o.code}` : "Order";
 }
+
+// ---- step 2b: group orders · requests ---------------------------------------
+
+export type Batch = {
+  id: string;
+  name: string;
+  status: "open" | "ordered" | "arrived";
+  ordered_at: string | null;
+  arrived_at: string | null;
+  cost_krw: number;
+  fx_sek_per_krw: number | null;
+  shipping_sek: number;
+  customs_sek: number;
+  vat_sek: number;
+  notes: string | null;
+  created_at: string;
+};
+
+/** What members can see of a group order */
+export type BatchPublic = Pick<Batch, "id" | "name" | "status" | "ordered_at" | "arrived_at">;
+
+export const BATCH_STATUS_LABEL: Record<Batch["status"], string> = {
+  open: "Collecting",
+  ordered: "Ordered — on its way",
+  arrived: "Arrived",
+};
+
+/** A row of purchase_list_view: one product on a group order */
+export type PurchaseListRow = {
+  batch_id: string;
+  batch_status: Batch["status"];
+  product_id: string;
+  code: string;
+  name: string;
+  variant: string | null;
+  maker: string | null;
+  category: string;
+  subcategory: string | null;
+  price_sek: number;
+  stock: number;
+  min_stock: number;
+  sort: number;
+  member_qty: number;
+  waiting_qty: number;
+  member_value_sek: number;
+  orders: number;
+  restock_qty: number;
+  unit_cost_krw: number | null;
+  total_qty: number;
+};
+
+/** Goods in SEK from KRW × rate, and the whole cost of a group order */
+export function batchCosts(b: Pick<Batch, "cost_krw" | "fx_sek_per_krw" | "shipping_sek" | "customs_sek" | "vat_sek">) {
+  const goods = b.fx_sek_per_krw ? Math.round(Number(b.cost_krw) * Number(b.fx_sek_per_krw)) : 0;
+  const total = goods + Number(b.shipping_sek) + Number(b.customs_sek) + Number(b.vat_sek);
+  return { goods, total };
+}
+
+/** "2026-10 Korea" — the default name for a new group order */
+export function defaultBatchName(d = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")} Korea`;
+}
+
+export type RequestRow = {
+  id: string;
+  member_id: string;
+  member_name: string;
+  text: string;
+  status: "open" | "added" | "declined";
+  product_id: string | null;
+  reply: string | null;
+  created_at: string;
+  decided_at: string | null;
+  product_name: string | null;
+  product_variant: string | null;
+  product_maker: string | null;
+  product_active: boolean | null;
+};
+
+export const REQUEST_STATUS_LABEL: Record<RequestRow["status"], string> = {
+  open: "Waiting for the treasurer",
+  added: "Added to the Store",
+  declined: "Not possible",
+};
