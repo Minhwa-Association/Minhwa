@@ -228,6 +228,7 @@ function readProductForm(formData: FormData) {
     min_stock: Number.isFinite(minStock) && minStock >= 0 ? minStock : 5,
     active: formData.get("active") === "on",
     notes: String(formData.get("notes") || "").trim() || null,
+    cost_krw: (() => { const c = String(formData.get("cost_krw") || "").replace(/[^0-9]/g, ""); return c ? Number(c) : null; })(),
   };
 }
 
@@ -379,6 +380,43 @@ export async function refundLine(formData: FormData) {
   redirect(`${ADMIN}?ok=refunded`);
 }
 
+/** Set a product's price (and, when given, its latest cost) — from the shopping list's "Set price". */
+export async function setProductPrice(formData: FormData) {
+  await treasurer();
+  const price = Math.round(Number(formData.get("price_sek")));
+  const costRaw = String(formData.get("cost_krw") || "").replace(/[^0-9]/g, "");
+  if (!Number.isFinite(price) || price < 0) backWithError(ADMIN, "Enter the price in whole kronor.");
+  await storeRpc("set_product_price", { p_product_id: String(formData.get("product_id")), p_price_sek: price, p_cost_krw: costRaw ? Number(costRaw) : null });
+  redirect(`${ADMIN}?ok=saved`);
+}
+
+/** "We can buy this for you for X kr" → hidden product + an order the member pays; then it runs like any order. */
+export async function quoteRequest(formData: FormData) {
+  await treasurer();
+  const name = String(formData.get("name") || "").trim();
+  const qty = Math.max(1, Math.round(Number(formData.get("qty") || 1)));
+  const costRaw = String(formData.get("cost_krw") || "").replace(/[^0-9]/g, "");
+  const priceRaw = String(formData.get("price_sek") || "").replace(/[^0-9]/g, "");
+  if (!name) backWithError(ADMIN, "Give the item a name.");
+  let price = priceRaw ? Number(priceRaw) : NaN;
+  if (!Number.isFinite(price) && costRaw) {
+    // no price typed → the rule: 1 kr per N won (settings.price_krw_per_sek)
+    const supabase = await createClient();
+    const { data: st } = await supabase.from("settings").select("price_krw_per_sek").eq("id", 1).single();
+    price = Math.round(Number(costRaw) / Math.max(1, Number(st?.price_krw_per_sek ?? 100)));
+  }
+  if (!Number.isFinite(price) || price <= 0) backWithError(ADMIN, "Set the price in kronor — type it, or give the cost in won and the price follows the rule.");
+  await storeRpc("quote_request", {
+    p_request_id: String(formData.get("request_id")),
+    p_name: name,
+    p_price_sek: price,
+    p_qty: qty,
+    p_cost_krw: costRaw ? Number(costRaw) : null,
+    p_reply: String(formData.get("reply") || "") || null,
+  });
+  redirect(`${ADMIN}?ok=quoted`);
+}
+
 // ---- store: requests -----------------------------------------------------------
 
 export async function createRequest(formData: FormData) {
@@ -491,6 +529,7 @@ export async function updateSettings(formData: FormData) {
     booking_window_weeks: Number(formData.get("booking_window_weeks")),
     cancel_deadline_days: Number(formData.get("cancel_deadline_days")),
     max_extra_seats: Number(formData.get("max_extra_seats")),
+    ...(formData.has("price_krw_per_sek") ? { price_krw_per_sek: Math.max(1, Math.round(Number(formData.get("price_krw_per_sek")) || 100)) } : {}),
   }).eq("id", 1);
   if (error) backWithError("/admin/settings", error.message);
   revalidatePath("/");

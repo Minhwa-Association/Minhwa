@@ -4,7 +4,7 @@ import { createClient, currentMember } from "@/lib/supabase/server";
 import { canUsePayments } from "@/lib/roles";
 import { shortDate } from "@/lib/dates";
 import { kr } from "@/lib/payments";
-import { CATEGORY_ORDER, groupProducts, productLabel, stockLevel, type Batch, type OrderRow, type Product, type PurchaseListRow, type RequestRow } from "@/lib/store";
+import { CATEGORY_ORDER, groupProducts, krw, priceFromCost, productLabel, stockLevel, type Batch, type OrderRow, type Product, type PurchaseListRow, type RequestRow } from "@/lib/store";
 import { addProduct, adjustStock, fulfilFromStock, markCollected, refundLine, saveProduct } from "@/app/actions";
 import { Notice, TopNav } from "@/app/components";
 import { PhotoUploader } from "./PhotoUploader";
@@ -29,14 +29,16 @@ export default async function StoreAdminPage({ searchParams }: { searchParams: P
   if (!canUsePayments(me)) redirect("/store");
   const q = await searchParams;
   const supabase = await createClient();
-  const [{ data: lineRows }, { data: waitingRows }, { data: productRows }, { data: moveRows }, { data: batchRows }, { data: requestRows }] = await Promise.all([
+  const [{ data: lineRows }, { data: waitingRows }, { data: productRows }, { data: moveRows }, { data: batchRows }, { data: requestRows }, { data: settings }] = await Promise.all([
     supabase.from("order_items").select(LINE_SELECT).in("status", ["paid", "ready", "group_buy"]).order("updated_at"),
     supabase.from("orders_view").select("*").eq("status", "awaiting_payment").order("created_at", { ascending: false }),
     supabase.from("products").select("*").order("sort").order("name"),
     supabase.from("stock_movements").select("id, qty, kind, note, created_at, product:products(name, variant, code)").order("created_at", { ascending: false }).limit(20),
     supabase.from("purchase_batches").select("*").order("created_at", { ascending: false }),
     supabase.from("requests_view").select("*").order("created_at", { ascending: false }).limit(100),
+    supabase.from("settings").select("price_krw_per_sek").eq("id", 1).single(),
   ]);
+  const krwPerSek = Math.max(1, Number(settings?.price_krw_per_sek ?? 100));
   const lines = (lineRows ?? []) as unknown as WaitingLine[];
   const awaiting = (waitingRows ?? []) as OrderRow[];
   const products = (productRows ?? []) as Product[];
@@ -112,10 +114,10 @@ export default async function StoreAdminPage({ searchParams }: { searchParams: P
         </section>
 
         {/* 2. group order */}
-        <GroupOrderSection batch={batch} list={list} waiting={waiting} onBatch={onBatch} past={past} />
+        <GroupOrderSection batch={batch} list={list} waiting={waiting} onBatch={onBatch} past={past} krwPerSek={krwPerSek} />
 
         {/* 3. requests */}
-        <RequestsSection requests={requests} products={products} />
+        <RequestsSection requests={requests} products={products} krwPerSek={krwPerSek} />
 
         {/* 4. awaiting payment */}
         <details className="card paysect" style={{ padding: 18 }}>
@@ -136,7 +138,7 @@ export default async function StoreAdminPage({ searchParams }: { searchParams: P
         {/* 5. products */}
         <section id="products" className="card stack paysect" style={{ padding: 18 }}>
           <h2>Products <span className="count">{products.length}</span></h2>
-          <div className="muted small">Stock changes only through &ldquo;Adjust&rdquo; (+ in, − out) so every change is on record. Untick &ldquo;On the list&rdquo; to hide a product from members. Low = at or below the minimum. Two photos per product — the first is the main picture; pictures are shrunk in your browser before upload, so a phone photo is fine.</div>
+          <div className="muted small">Stock changes only through &ldquo;Adjust&rdquo; (+ in, − out) so every change is on record. Untick &ldquo;On the list&rdquo; to hide a product from members. Low = at or below the minimum. Price rule: ₩{krwPerSek.toLocaleString("en-GB")} = 1 kr — enter the cost per piece in won and the rule price is shown when it differs. Two photos per product — the first is the main picture; pictures are shrunk in your browser before upload, so a phone photo is fine. &ldquo;Special&rdquo; items are one-off quotes for a member and stay hidden.</div>
           {groups.map((g) => (
             <div key={g.category} className="stack" style={{ gap: 4 }}>
               <div className="sublabel" style={{ fontSize: 15, color: "var(--ink)" }}>{g.category}</div>
@@ -145,7 +147,10 @@ export default async function StoreAdminPage({ searchParams }: { searchParams: P
                 return (
                   <div key={p.id} className={`padmin ${p.active ? "" : "off"}`}>
                     <div className="row between" style={{ flexWrap: "wrap", gap: 8, alignItems: "flex-start" }}>
-                      <div className="muted small">{p.code} · {sg.subcategory}</div>
+                      <div className="muted small">
+                        {p.code} · {sg.subcategory}
+                        {(() => { const sug = priceFromCost(p.cost_krw, krwPerSek); return sug !== null && sug !== Number(p.price_sek) ? <span> · cost {krw(p.cost_krw)} → rule says <b>{sug} kr</b> (now {p.price_sek} kr)</span> : null; })()}
+                      </div>
                       <PhotoUploader productId={p.id} photos={p.photos ?? []} />
                     </div>
                     <form action={saveProduct} className="pedit">
@@ -156,6 +161,7 @@ export default async function StoreAdminPage({ searchParams }: { searchParams: P
                       <input name="maker" defaultValue={p.maker ?? ""} placeholder="maker" aria-label="Maker" />
                       <input name="subcategory" defaultValue={p.subcategory ?? ""} placeholder="subcategory" aria-label="Subcategory" />
                       <label className="fld">kr<input name="price_sek" type="number" min={0} step={1} defaultValue={p.price_sek} aria-label="Price" /></label>
+                      <label className="fld" title="Latest cost per piece in won">₩<input name="cost_krw" type="text" inputMode="numeric" defaultValue={p.cost_krw ?? ""} placeholder="cost" aria-label="Cost per piece in won" /></label>
                       <label className="fld">min<input name="min_stock" type="number" min={0} step={1} defaultValue={p.min_stock} aria-label="Minimum stock" /></label>
                       <label className="check"><input type="checkbox" name="active" defaultChecked={p.active} /> On the list</label>
                       <button className="btn line sm">Save</button>

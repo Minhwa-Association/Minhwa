@@ -239,3 +239,14 @@ input.qty { width: 64px; min-height: 40px; padding: 6px 8px; text-align: center;
   .shoprow { grid-template-columns: 1fr 1fr 1fr; }
   .shoprow > span:first-child { grid-column: 1 / -1; }
 }
+
+/* store v12: cost column, quotes */
+.pedit { grid-template-columns: minmax(140px, 2fr) minmax(90px, 1fr) minmax(90px, 1fr) minmax(110px, 1fr) 96px 110px 80px auto auto; }
+.shophead, .shoprow { grid-template-columns: minmax(0, 2fr) 90px 80px 60px 110px 120px 60px; }
+.quote { display: grid; grid-template-columns: minmax(160px, 2fr) 64px 110px 150px minmax(120px, 1fr) auto; gap: 6px; align-items: center; }
+.quote input { min-height: 40px; padding: 6px 10px; font-size: 14px; }
+@media (max-width: 900px) {
+  .pedit { grid-template-columns: 1fr 1fr; }
+  .quote { grid-template-columns: 1fr 1fr; }
+  .quote input[name="name"] { grid-column: 1 / -1; }
+}

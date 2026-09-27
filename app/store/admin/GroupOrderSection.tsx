@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { shortDate } from "@/lib/dates";
 import { kr } from "@/lib/payments";
-import { BATCH_STATUS_LABEL, batchCosts, defaultBatchName, type Batch, type PurchaseListRow } from "@/lib/store";
-import { addAllWaitingToBatch, addLineToBatch, markBatchArrived, markBatchOrdered, refundLine, removeLineFromBatch, saveBatchCosts, setRestock, startBatch, suggestRestock } from "@/app/actions";
+import { BATCH_STATUS_LABEL, batchCosts, defaultBatchName, krw, priceFromCost, type Batch, type PurchaseListRow } from "@/lib/store";
+import { addAllWaitingToBatch, addLineToBatch, markBatchArrived, markBatchOrdered, refundLine, removeLineFromBatch, saveBatchCosts, setProductPrice, setRestock, startBatch, suggestRestock } from "@/app/actions";
 
 export type WaitingLine = {
   id: string; order_id: string; qty: number; name: string; unit_price_sek: number; status: string; batch_id: string | null; updated_at: string;
@@ -11,18 +11,22 @@ export type WaitingLine = {
 };
 
 /** Group order from Korea: the active batch (open or ordered), its shopping list, costs; or the form to start one. */
-export function GroupOrderSection({ batch, list, waiting, onBatch, past }: {
+export function GroupOrderSection({ batch, list, waiting, onBatch, past, krwPerSek }: {
   batch: Batch | null;                 // the open or ordered one
   list: PurchaseListRow[];             // purchase_list_view rows of that batch
   waiting: WaitingLine[];              // paid lines with too little stock, not on any batch
   onBatch: WaitingLine[];              // group_buy lines of that batch
   past: Batch[];                       // arrived batches
+  krwPerSek: number;                   // the price rule: 1 kr per this many won
 }) {
   const open = batch?.status === "open";
   const costs = batch ? batchCosts(batch) : null;
   const membersPaid = list.reduce((s, r) => s + Number(r.member_value_sek), 0);
   const restockValue = list.reduce((s, r) => s + Number(r.restock_qty) * Number(r.price_sek), 0);
   const pieces = list.reduce((s, r) => s + Number(r.total_qty), 0);
+  // cost of the pieces on the list at the real rate, where a cost per piece is known
+  const knownCostKrw = list.reduce((s, r) => s + (r.unit_cost_krw ? Number(r.unit_cost_krw) * Number(r.total_qty) : 0), 0);
+  const logistics = batch ? Number(batch.shipping_sek) + Number(batch.customs_sek) + Number(batch.vat_sek) : 0;
 
   return (
     <section className="card stack paysect" style={{ padding: 18 }}>
@@ -80,7 +84,7 @@ export function GroupOrderSection({ batch, list, waiting, onBatch, past }: {
             {list.length === 0 && <div className="muted small">Empty — put waiting lines on it or add restock.</div>}
             {list.length > 0 && (
               <div className="shoplist">
-                <div className="shophead"><span>Product</span><span>Members</span><span>Restock</span><span>Total</span><span>Cost / pc (KRW)</span><span /></div>
+                <div className="shophead"><span>Product</span><span>Members</span><span>Restock</span><span>Total</span><span>Cost / pc (₩)</span><span>Price (kr)</span><span /></div>
                 {list.map((r) => (
                   <form key={r.product_id} action={setRestock} className="shoprow">
                     <input type="hidden" name="batch_id" value={batch.id} />
@@ -89,10 +93,31 @@ export function GroupOrderSection({ batch, list, waiting, onBatch, past }: {
                     <span>{r.member_qty > 0 ? <>{r.member_qty} <span className="muted small">({r.orders} order{r.orders === 1 ? "" : "s"}{r.waiting_qty !== r.member_qty && batch.status !== "arrived" ? "" : ""})</span></> : <span className="muted">—</span>}</span>
                     <span>{open ? <input name="restock_qty" type="number" min={0} step={1} defaultValue={r.restock_qty} className="qty" aria-label="Restock pieces" /> : <span>{r.restock_qty}</span>}</span>
                     <span className="bold">{r.total_qty}</span>
-                    <span>{open ? <input name="unit_cost_krw" type="text" inputMode="numeric" defaultValue={r.unit_cost_krw ?? ""} placeholder="₩" className="qty" style={{ width: 84 }} aria-label="Cost per piece in KRW" /> : <span>{r.unit_cost_krw ? `₩${Number(r.unit_cost_krw).toLocaleString("en-GB")}` : "—"}</span>}</span>
+                    <span>{open ? <input name="unit_cost_krw" type="text" inputMode="numeric" defaultValue={r.unit_cost_krw ?? ""} placeholder="₩" className="qty" style={{ width: 84 }} aria-label="Cost per piece in KRW" /> : <span>{r.unit_cost_krw ? krw(r.unit_cost_krw) : "—"}</span>}</span>
+                    <span className="small">
+                      {r.price_sek} kr
+                      {(() => { const sug = priceFromCost(r.unit_cost_krw, krwPerSek); return sug !== null && sug !== Number(r.price_sek) ? <span className="muted"> → rule {sug} kr</span> : null; })()}
+                    </span>
                     <span>{open && <button className="btn line sm">Set</button>}</span>
                   </form>
                 ))}
+                {list.some((r) => { const sug = priceFromCost(r.unit_cost_krw, krwPerSek); return sug !== null && sug !== Number(r.price_sek); }) && (
+                  <div className="stack" style={{ gap: 4, paddingTop: 8 }}>
+                    <div className="muted small">Prices that differ from the rule (₩{krwPerSek.toLocaleString("en-GB")} = 1 kr) — set them when you are sure of the cost:</div>
+                    {list.filter((r) => { const sug = priceFromCost(r.unit_cost_krw, krwPerSek); return sug !== null && sug !== Number(r.price_sek); }).map((r) => {
+                      const sug = priceFromCost(r.unit_cost_krw, krwPerSek)!;
+                      return (
+                        <form key={`price-${r.product_id}`} action={setProductPrice} className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                          <input type="hidden" name="product_id" value={r.product_id} />
+                          <input type="hidden" name="price_sek" value={sug} />
+                          <input type="hidden" name="cost_krw" value={String(r.unit_cost_krw ?? "")} />
+                          <span className="small" style={{ minWidth: 0 }}><b>{r.name}</b>{r.variant ? ` · ${r.variant}` : ""}: {r.price_sek} kr → <b>{sug} kr</b> <span className="muted">({krw(r.unit_cost_krw)})</span></span>
+                          <button className="btn line sm">Set price {sug} kr</button>
+                        </form>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -125,13 +150,20 @@ export function GroupOrderSection({ batch, list, waiting, onBatch, past }: {
             </div>
             <div className="row" style={{ gap: 12, flexWrap: "wrap", alignItems: "center" }}>
               <button className="btn line sm">Save costs</button>
-              {costs && (
-                <span className="muted small">
-                  Goods {kr(costs.goods)} + shipping/customs/VAT {kr(Number(batch.shipping_sek) + Number(batch.customs_sek) + Number(batch.vat_sek))} = <b>{kr(costs.total)}</b> ·
-                  members paid {kr(membersPaid)} · restock worth {kr(restockValue)} → result if all sold <b style={{ color: membersPaid + restockValue - costs.total < 0 ? "var(--red)" : "var(--green-text)" }}>{kr(membersPaid + restockValue - costs.total)}</b>
-                </span>
-              )}
             </div>
+            {costs && (
+              <div className="muted small stack" style={{ gap: 2 }}>
+                <div>Members are not charged shipping, customs or VAT — they pay by the rule (₩{krwPerSek.toLocaleString("en-GB")} = 1 kr) and the gap to the real rate has to cover them.</div>
+                <div>
+                  Goods at the real rate <b>{kr(costs.goods)}</b>{knownCostKrw > 0 && batch.fx_sek_per_krw ? <span> (the list&apos;s known costs: {krw(knownCostKrw)} ≈ {kr(Math.round(knownCostKrw * Number(batch.fx_sek_per_krw)))})</span> : null} · shipping + customs + VAT <b>{kr(logistics)}</b> · total <b>{kr(costs.total)}</b>
+                </div>
+                <div>
+                  Members paid <b>{kr(membersPaid)}</b> · restock worth {kr(restockValue)} at members&apos; prices → if everything is sold the gap is{" "}
+                  <b style={{ color: membersPaid + restockValue - costs.total < 0 ? "var(--red)" : "var(--green-text)" }}>{kr(membersPaid + restockValue - costs.total)}</b>
+                  {costs.goods > 0 ? <span> (margin over goods {kr(membersPaid + restockValue - costs.goods)} vs logistics {kr(logistics)})</span> : null}
+                </div>
+              </div>
+            )}
           </form>
         </>
       )}
@@ -152,7 +184,7 @@ export function GroupOrderSection({ batch, list, waiting, onBatch, past }: {
           </div>
         </details>
       )}
-      <div className="muted small">After a group order, check the prices in <Link href="#products" style={{ fontWeight: 600 }}>Products</Link> — prices are fixed in kronor, so the exchange rate lands on the association.</div>
+      <div className="muted small">Prices are fixed in kronor by the rule (₩{krwPerSek.toLocaleString("en-GB")} = 1 kr); after a group order check them above or in <Link href="#products" style={{ fontWeight: 600 }}>Products</Link>. The rule itself is in Admin → Settings.</div>
     </section>
   );
 }

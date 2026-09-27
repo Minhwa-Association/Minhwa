@@ -48,6 +48,9 @@ All rules live in the database functions (`sql/`), so the app can't bypass them.
 ## Group orders from Korea (v11)
 One `purchase_batches` row is *open* at a time ("2026-10 Korea"). Paid lines that cannot be handed out from stock go on it (`order_items.status = group_buy`, `batch_id`); restock pieces per product live in `purchase_lines` (suggested as `min_stock − stock` for low-stock products). `mark_batch_ordered` freezes the list; `mark_batch_arrived` books every product in (`stock_movements.purchase`), hands the members' lines out (`sale`) and marks them ready. Costs (KRW, SEK/KRW rate, shipping, customs, import VAT) are kept on the batch and shown against what members paid. `requests` = a member's ask for something not on the list (open → added with the linked product / declined). `refund_order_item` marks a line refunded after the treasurer has sent the money back with Swish; when every line of an order is refunded the payment is too. Members see group orders through `group_orders_public` (name and status only).
 
+## Price rule and quotes (v12)
+Members are not charged shipping, customs or VAT: a piece that costs ₩10,000 in Korea is sold for 100 kr (`settings.price_krw_per_sek`, 100), and the gap to the real exchange rate covers the logistics. `products.cost_krw` keeps the latest cost per piece (copied from the group order on arrival); the shopping list and the product list show the rule price when it differs. A request for something that is not on the list can be **quoted**: `quote_request` creates a hidden "Special" product for that member plus an order awaiting payment — from there it is an ordinary order (Swish → confirmed → group order → ready).
+
 ## Next modules (same database)
 - Ledger: categories for every bank line (starting from the 2024 categories), receipts, month close, SIE export, advance payments (paid orders not yet handed out).
 - Secretary: association mailbox, notices, financial report to members.

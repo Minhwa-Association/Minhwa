@@ -66,9 +66,17 @@ export default async function MyOrdersPage({ searchParams }: { searchParams: Pro
               <div key={r.id} className="card stack" style={{ gap: 4 }}>
                 <div className="row between" style={{ alignItems: "flex-start", gap: 8 }}>
                   <div className="prewrap" style={{ minWidth: 0 }}>{r.text}</div>
-                  <span className={`tag ${r.status === "added" ? "paid" : r.status === "open" ? "pending" : "unpaid"}`}>{REQUEST_STATUS_LABEL[r.status]}</span>
+                  <span className={`tag ${r.status === "added" || r.status === "quoted" ? "paid" : r.status === "open" ? "pending" : "unpaid"}`}>{REQUEST_STATUS_LABEL[r.status]}</span>
                 </div>
                 <div className="muted small">{shortDate(new Date(r.created_at))}{r.reply ? ` · ${r.reply}` : ""}</div>
+                {r.status === "quoted" && r.order_id && (
+                  <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                    <span className="small">We can buy it for you for <b>{kr(r.quote_sek)}</b>{r.order_status ? ` · ${ORDER_STATUS_LABEL[r.order_status]}` : ""}</span>
+                    <Link href={`/store/orders/${r.order_id}`} className={`btn sm ${r.order_status === "awaiting_payment" && r.payment_status === "pending" ? "red" : "line"}`}>
+                      {r.order_status === "awaiting_payment" && r.payment_status === "pending" ? `Pay ${kr(r.quote_sek)}` : "Order"}
+                    </Link>
+                  </div>
+                )}
                 {r.status === "added" && r.product_name && (
                   <div className="small">Now on the list: <Link href="/store" style={{ fontWeight: 600, color: "var(--red)" }}>{productLabel({ name: r.product_name, variant: r.product_variant, maker: r.product_maker })}</Link>{r.product_active ? "" : " (not on the list right now)"}</div>
                 )}

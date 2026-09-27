@@ -64,6 +64,7 @@ export function Notice({ error, ok, text }: { error?: string; ok?: string; text?
   if (ok === "batch_arrived") return <div className="notice ok">Arrived — stock booked in, members&apos; items are ready to collect.</div>;
   if (ok === "refunded") return <div className="notice ok">Line marked as refunded.</div>;
   if (ok === "requested") return <div className="notice ok">Request sent — the treasurer will look at it and you will see the answer here.</div>;
+  if (ok === "quoted") return <div className="notice ok">Quote sent — the member now has an order to pay under My orders. Once paid it goes on the group order like any other line.</div>;
   return null;
 }
 

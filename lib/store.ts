@@ -17,7 +17,22 @@ export type Product = {
   sort: number;
   notes: string | null;
   photos?: string[] | null;   // v10: up to two storage paths, first = main picture
+  cost_krw?: number | null;   // v12: latest purchase price per piece, in won
 };
+
+/** The price rule: members pay 1 kr per `krwPerSek` won (100 by default) — the gap to the real rate covers shipping, customs and VAT. */
+export function priceFromCost(costKrw: number | string | null | undefined, krwPerSek: number): number | null {
+  const c = Number(costKrw);
+  if (!Number.isFinite(c) || c <= 0 || !krwPerSek) return null;
+  return Math.round(c / krwPerSek);
+}
+
+/** "₩12,340" */
+export function krw(n: number | string | null | undefined): string {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return "";
+  return `₩${Math.round(v).toLocaleString("en-GB")}`;
+}
 
 export const PHOTO_BUCKET = "product-photos";
 export const MAX_PHOTOS = 2;
@@ -201,7 +216,7 @@ export type RequestRow = {
   member_id: string;
   member_name: string;
   text: string;
-  status: "open" | "added" | "declined";
+  status: "open" | "quoted" | "added" | "declined";
   product_id: string | null;
   reply: string | null;
   created_at: string;
@@ -210,10 +225,15 @@ export type RequestRow = {
   product_variant: string | null;
   product_maker: string | null;
   product_active: boolean | null;
+  order_id?: string | null;          // v12: the order created by a quote
+  quote_sek?: number | null;
+  order_status?: OrderRow["status"] | null;
+  payment_status?: string | null;
 };
 
 export const REQUEST_STATUS_LABEL: Record<RequestRow["status"], string> = {
   open: "Waiting for the treasurer",
+  quoted: "Price offered",
   added: "Added to the Store",
   declined: "Not possible",
 };

@@ -36,6 +36,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           <div><label htmlFor="win">Members can book this many weeks ahead</label><input id="win" name="booking_window_weeks" type="number" min={1} max={12} defaultValue={settings?.booking_window_weeks} /></div>
           <div><label htmlFor="cancel">Free cancellation until (days before)</label><input id="cancel" name="cancel_deadline_days" type="number" min={0} max={14} defaultValue={settings?.cancel_deadline_days} /></div>
           <div><label htmlFor="extra">Extra seats allowed beyond 5</label><input id="extra" name="max_extra_seats" type="number" min={0} max={20} defaultValue={settings?.max_extra_seats} /></div>
+          <div><label htmlFor="krw">Store price rule — won per krona <span style={{ opacity: 0.7 }}>(100 → ₩10,000 costs 100 kr; the gap to the real rate covers shipping, customs and VAT)</span></label><input id="krw" name="price_krw_per_sek" type="number" min={1} max={1000} defaultValue={settings?.price_krw_per_sek ?? 100} /></div>
           <button className="btn ink">Save settings</button>
         </form>
 
