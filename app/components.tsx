@@ -18,11 +18,12 @@ export function Check() {
   );
 }
 
-export function TopNav({ current, isAdmin }: { current: "board" | "me" | "admin"; isAdmin: boolean }) {
+export function TopNav({ current, isAdmin }: { current: "board" | "me" | "calendar" | "admin"; isAdmin: boolean }) {
   return (
     <nav className="nav" aria-label="Main">
       <Link href="/" className={`pill ${current === "board" ? "active" : ""}`}>Board</Link>
       <Link href="/me" className={`pill ${current === "me" ? "active" : ""}`}>My seats</Link>
+      <Link href="/calendar" className={`pill ${current === "calendar" ? "active" : ""}`}>Calendar</Link>
       {isAdmin && <Link href="/admin" className={`pill ${current === "admin" ? "active" : ""}`}>Admin</Link>}
       <form action={signOut}><button className="pill" style={{ cursor: "pointer" }}>Log out</button></form>
     </nav>
@@ -34,6 +35,9 @@ export function Notice({ error, ok }: { error?: string; ok?: string }) {
   if (ok === "cancelled") return <div className="notice ok">Booking cancelled.</div>;
   if (ok === "paid") return <div className="notice ok">Thanks — marked as awaiting confirmation. An admin will confirm your payment.</div>;
   if (ok === "saved") return <div className="notice ok">Saved.</div>;
+  if (ok === "event_saved") return <div className="notice ok">Event saved.</div>;
+  if (ok === "event_deleted") return <div className="notice ok">Event deleted.</div>;
+  if (ok === "link_reset") return <div className="notice ok">New link created. The old link no longer works — add the new one to your phone.</div>;
   return null;
 }
 

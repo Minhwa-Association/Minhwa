@@ -32,7 +32,7 @@ export function isValidISODate(s: string | undefined): s is string {
   return !!s && /^\d{4}-\d{2}-\d{2}$/.test(s) && !isNaN(parseISODate(s).getTime());
 }
 
-const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+export const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
 /** "21 – 25 September" or "28 September – 2 October" */
 export function weekLabel(monday: Date): string {
@@ -61,4 +61,26 @@ export function hm(t: string): string {
 
 export function sessionLabel(s: "day" | "evening"): string {
   return s === "day" ? "Day" : "Evening";
+}
+
+export const DAYS7 = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
+
+/** "Sat" — any day of the week */
+export function dayShort(d: Date): string {
+  return DAYS7[(d.getDay() + 6) % 7];
+}
+
+/** "October 2026" */
+export function monthYear(d: Date): string {
+  return `${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+/** "3 Oct" */
+export function dayMonth(d: Date): string {
+  return `${d.getDate()} ${MONTHS[d.getMonth()].slice(0, 3)}`;
+}
+
+/** Today's date in Stockholm as YYYY-MM-DD (the server runs in UTC). */
+export function todayStockholm(): string {
+  return new Intl.DateTimeFormat("sv-SE", { timeZone: "Europe/Stockholm" }).format(new Date());
 }

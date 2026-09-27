@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient, currentMember } from "@/lib/supabase/server";
 import { cleanRoles, hasRole } from "@/lib/roles";
+import { isValidISODate } from "@/lib/dates";
+import { keyToAudience } from "@/lib/calendar";
 
 function backWithError(path: string, message: string): never {
   const sep = path.includes("?") ? "&" : "?";
@@ -130,6 +132,84 @@ export async function addMember(formData: FormData) {
   if (error) backWithError("/admin/settings", error.message);
   revalidatePath("/admin/settings");
   redirect("/admin/settings?ok=saved");
+}
+
+// ---- calendar ---------------------------------------------------------------
+
+function canEditEvents(me: { roles?: string[] | null } | null) {
+  return !!me && (hasRole(me, "crew") || hasRole(me, "admin"));
+}
+
+const TIME = /^\d{2}:\d{2}$/;
+
+function readEventForm(formData: FormData, back: string) {
+  const title = String(formData.get("title") || "").trim();
+  const date = String(formData.get("date") || "");
+  const endRaw = String(formData.get("end_date") || "");
+  const allDay = formData.get("all_day") === "on";
+  const start = String(formData.get("start_time") || "");
+  const end = String(formData.get("end_time") || "");
+  const location = String(formData.get("location") || "").trim();
+  const notes = String(formData.get("notes") || "").trim();
+  const audience = keyToAudience(String(formData.get("audience") || "everyone"));
+
+  if (!title) backWithError(back, "Give the event a title.");
+  if (!isValidISODate(date)) backWithError(back, "Pick a date.");
+  const end_date = endRaw && endRaw !== date ? endRaw : null;
+  if (end_date && (!isValidISODate(end_date) || end_date < date)) backWithError(back, "The last day must be after the first day.");
+  if (!allDay && !TIME.test(start)) backWithError(back, "Enter a start time, or tick All day.");
+  const start_time = allDay ? null : start;
+  const end_time = allDay || !TIME.test(end) ? null : end;
+  if (start_time && end_time && !end_date && end_time <= start_time) backWithError(back, "The end time must be after the start time.");
+  return { title, date, end_date, start_time, end_time, location: location || null, notes: notes || null, audience };
+}
+
+export async function createEvent(formData: FormData) {
+  const me = await currentMember();
+  if (!me) redirect("/login");
+  if (!canEditEvents(me)) redirect("/calendar");
+  const row = readEventForm(formData, "/calendar/new");
+  const supabase = await createClient();
+  const { data, error } = await supabase.from("events").insert({ ...row, created_by: me.id }).select("id").single();
+  if (error) backWithError("/calendar/new", error.message);
+  revalidatePath("/calendar");
+  redirect(`/calendar/${data.id}?ok=event_saved`);
+}
+
+export async function updateEvent(formData: FormData) {
+  const me = await currentMember();
+  if (!me) redirect("/login");
+  if (!canEditEvents(me)) redirect("/calendar");
+  const id = String(formData.get("event_id") || "");
+  const row = readEventForm(formData, `/calendar/${id}/edit`);
+  const supabase = await createClient();
+  const { error } = await supabase.from("events").update(row).eq("id", id);
+  if (error) backWithError(`/calendar/${id}/edit`, error.message);
+  revalidatePath("/calendar");
+  revalidatePath(`/calendar/${id}`);
+  redirect(`/calendar/${id}?ok=event_saved`);
+}
+
+export async function deleteEvent(formData: FormData) {
+  const me = await currentMember();
+  if (!me) redirect("/login");
+  if (!canEditEvents(me)) redirect("/calendar");
+  const id = String(formData.get("event_id") || "");
+  const supabase = await createClient();
+  const { error } = await supabase.from("events").delete().eq("id", id);
+  if (error) backWithError(`/calendar/${id}/edit`, error.message);
+  revalidatePath("/calendar");
+  redirect("/calendar?ok=event_deleted");
+}
+
+export async function resetCalendarLink() {
+  const me = await currentMember();
+  if (!me) redirect("/login");
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("reset_calendar_token");
+  if (error) backWithError("/calendar/subscribe", error.message);
+  revalidatePath("/calendar/subscribe");
+  redirect("/calendar/subscribe?ok=link_reset");
 }
 
 export async function signOut() {
