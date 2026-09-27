@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient, currentMember } from "@/lib/supabase/server";
-import { hasRole } from "@/lib/roles";
+import { canUseCalendar, hasRole } from "@/lib/roles";
 import { deleteEvent, updateEvent } from "@/app/actions";
 import { Notice, TopNav } from "@/app/components";
 import { EventForm } from "@/app/calendar/EventForm";
@@ -11,7 +11,7 @@ export default async function EditEventPage({ params, searchParams }: { params: 
   const me = await currentMember();
   if (!me) redirect("/login");
   const { id } = await params;
-  if (!hasRole(me, "crew") && !hasRole(me, "admin")) redirect(`/calendar/${id}`);
+  if (!canUseCalendar(me)) redirect("/");
   const { error, confirm } = await searchParams;
   const supabase = await createClient();
   const { data } = await supabase.from("events").select("*").eq("id", id).maybeSingle();
@@ -22,7 +22,7 @@ export default async function EditEventPage({ params, searchParams }: { params: 
     <main className="page">
       <div className="topbar">
         <div><h1>Edit event</h1><div className="muted small"><Link href={`/calendar/${e.id}`}>← Back to the event</Link></div></div>
-        <TopNav current="calendar" isAdmin={hasRole(me, "admin")} />
+        <TopNav current="calendar" isAdmin={hasRole(me, "admin")} showCalendar />
       </div>
       <div className="stack">
         <Notice error={error} />

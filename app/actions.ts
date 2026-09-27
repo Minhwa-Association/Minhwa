@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient, currentMember } from "@/lib/supabase/server";
-import { cleanRoles, hasRole } from "@/lib/roles";
+import { canUseCalendar, cleanRoles, hasRole } from "@/lib/roles";
 import { isValidISODate } from "@/lib/dates";
 import { keyToAudience } from "@/lib/calendar";
 
@@ -137,7 +137,7 @@ export async function addMember(formData: FormData) {
 // ---- calendar ---------------------------------------------------------------
 
 function canEditEvents(me: { roles?: string[] | null } | null) {
-  return !!me && (hasRole(me, "crew") || hasRole(me, "admin"));
+  return canUseCalendar(me);
 }
 
 const TIME = /^\d{2}:\d{2}$/;
@@ -151,7 +151,7 @@ function readEventForm(formData: FormData, back: string) {
   const end = String(formData.get("end_time") || "");
   const location = String(formData.get("location") || "").trim();
   const notes = String(formData.get("notes") || "").trim();
-  const audience = keyToAudience(String(formData.get("audience") || "everyone"));
+  const audience = keyToAudience(String(formData.get("audience") || "all"));
 
   if (!title) backWithError(back, "Give the event a title.");
   if (!isValidISODate(date)) backWithError(back, "Pick a date.");
@@ -167,7 +167,7 @@ function readEventForm(formData: FormData, back: string) {
 export async function createEvent(formData: FormData) {
   const me = await currentMember();
   if (!me) redirect("/login");
-  if (!canEditEvents(me)) redirect("/calendar");
+  if (!canEditEvents(me)) redirect("/");
   const row = readEventForm(formData, "/calendar/new");
   const supabase = await createClient();
   const { data, error } = await supabase.from("events").insert({ ...row, created_by: me.id }).select("id").single();
@@ -179,7 +179,7 @@ export async function createEvent(formData: FormData) {
 export async function updateEvent(formData: FormData) {
   const me = await currentMember();
   if (!me) redirect("/login");
-  if (!canEditEvents(me)) redirect("/calendar");
+  if (!canEditEvents(me)) redirect("/");
   const id = String(formData.get("event_id") || "");
   const row = readEventForm(formData, `/calendar/${id}/edit`);
   const supabase = await createClient();
@@ -193,7 +193,7 @@ export async function updateEvent(formData: FormData) {
 export async function deleteEvent(formData: FormData) {
   const me = await currentMember();
   if (!me) redirect("/login");
-  if (!canEditEvents(me)) redirect("/calendar");
+  if (!canEditEvents(me)) redirect("/");
   const id = String(formData.get("event_id") || "");
   const supabase = await createClient();
   const { error } = await supabase.from("events").delete().eq("id", id);
@@ -205,6 +205,7 @@ export async function deleteEvent(formData: FormData) {
 export async function resetCalendarLink() {
   const me = await currentMember();
   if (!me) redirect("/login");
+  if (!canUseCalendar(me)) redirect("/");
   const supabase = await createClient();
   const { error } = await supabase.rpc("reset_calendar_token");
   if (error) backWithError("/calendar/subscribe", error.message);

@@ -18,12 +18,12 @@ export function Check() {
   );
 }
 
-export function TopNav({ current, isAdmin }: { current: "board" | "me" | "calendar" | "admin"; isAdmin: boolean }) {
+export function TopNav({ current, isAdmin, showCalendar = false }: { current: "board" | "me" | "calendar" | "admin"; isAdmin: boolean; showCalendar?: boolean }) {
   return (
     <nav className="nav" aria-label="Main">
       <Link href="/" className={`pill ${current === "board" ? "active" : ""}`}>Board</Link>
       <Link href="/me" className={`pill ${current === "me" ? "active" : ""}`}>My seats</Link>
-      <Link href="/calendar" className={`pill ${current === "calendar" ? "active" : ""}`}>Calendar</Link>
+      {showCalendar && <Link href="/calendar" className={`pill ${current === "calendar" ? "active" : ""}`}>Calendar</Link>}
       {isAdmin && <Link href="/admin" className={`pill ${current === "admin" ? "active" : ""}`}>Admin</Link>}
       <form action={signOut}><button className="pill" style={{ cursor: "pointer" }}>Log out</button></form>
     </nav>

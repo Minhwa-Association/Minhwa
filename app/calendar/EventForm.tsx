@@ -53,7 +53,7 @@ export function EventForm({
         <select id="audience" name="audience" defaultValue={audienceToKey(event?.audience)}>
           {AUDIENCES.map((a) => <option key={a.key} value={a.key}>{a.label}</option>)}
         </select>
-        <div className="muted small" style={{ marginTop: 4 }}>Admins always see every event. Members only see &ldquo;Everyone&rdquo; events.</div>
+        <div className="muted small" style={{ marginTop: 4 }}>Only Crew and Admin can open the calendar. &ldquo;Admin only&rdquo; hides it from Crew.</div>
       </div>
       <button className="btn ink">{submitLabel}</button>
     </form>

@@ -78,7 +78,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     <main className="page wide">
       <div className="topbar">
         <div><h1>Weekly board · Admin</h1><div className="muted small">Mark payments as they arrive on Swish. Full slots still take extra bookings (shown in navy).</div></div>
-        <TopNav current="admin" isAdmin />
+        <TopNav current="admin" isAdmin showCalendar />
       </div>
       <div className="stack" style={{ gap: 16 }}>
         <Notice error={error} ok={ok} />

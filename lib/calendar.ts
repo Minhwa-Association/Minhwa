@@ -14,34 +14,24 @@ export type EventRow = {
   updated_at: string;
 };
 
-/** Who can see the event — the <select> in the form ↔ the audience array in the database. */
+/** Who can see the event — the <select> in the form ↔ the audience array in the database.
+ *  The calendar itself is only open to Crew and Admin, so the choice is just "both" or "Admin only". */
 export const AUDIENCES = [
-  { key: "everyone", label: "Everyone", roles: [] as string[] },
-  { key: "crew", label: "Crew only", roles: ["crew"] },
-  { key: "teacher", label: "Teachers only", roles: ["teacher"] },
-  { key: "crew_teacher", label: "Crew and teachers", roles: ["crew", "teacher"] },
+  { key: "all", label: "Crew and Admin", roles: [] as string[] },
+  { key: "admin", label: "Admin only", roles: ["admin"] },
 ] as const;
 
 export function audienceToKey(a: string[] | null | undefined): (typeof AUDIENCES)[number]["key"] {
-  const set = new Set(a ?? []);
-  if (set.size === 0) return "everyone";
-  if (set.has("crew") && set.has("teacher")) return "crew_teacher";
-  if (set.has("crew")) return "crew";
-  return "teacher";
+  return a?.includes("admin") ? "admin" : "all";
 }
 
 export function keyToAudience(key: string): string[] {
   return [...(AUDIENCES.find((x) => x.key === key)?.roles ?? [])];
 }
 
-/** "Crew · Teachers" — null when everyone can see it */
+/** "Admin only" — null when every Crew/Admin can see it */
 export function audienceLabel(a: string[] | null | undefined): string | null {
-  const set = new Set(a ?? []);
-  if (set.size === 0) return null;
-  const parts = [];
-  if (set.has("crew")) parts.push("Crew");
-  if (set.has("teacher")) parts.push("Teachers");
-  return parts.join(" · ");
+  return a?.includes("admin") ? "Admin only" : null;
 }
 
 /** "18:00–20:00" · "All day" · "Sat 3 Oct – Mon 5 Oct" · "Sat 3 Oct 18:00 → Sun 4 Oct 10:00" */

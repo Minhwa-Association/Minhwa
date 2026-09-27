@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient, currentMember } from "@/lib/supabase/server";
-import { hasRole } from "@/lib/roles";
+import { canUseCalendar, hasRole } from "@/lib/roles";
 import { addDays, isValidISODate, mondayOf, parseISODate, shortDate, toISODate, weekLabel, WEEKDAYS } from "@/lib/dates";
 import { Chevron, Notice, TopNav } from "@/app/components";
 
@@ -45,7 +45,7 @@ export default async function BoardPage({ searchParams }: { searchParams: Promis
           <h1>Seat booking</h1>
           <div className="muted small">Minhwa Association</div>
         </div>
-        <TopNav current="board" isAdmin={hasRole(me, "admin")} />
+        <TopNav current="board" isAdmin={hasRole(me, "admin")} showCalendar={canUseCalendar(me)} />
       </div>
 
       <div className="stack">

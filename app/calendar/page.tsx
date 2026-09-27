@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient, currentMember } from "@/lib/supabase/server";
-import { hasRole } from "@/lib/roles";
+import { canUseCalendar, hasRole } from "@/lib/roles";
 import { dayShort, monthYear, parseISODate, todayStockholm } from "@/lib/dates";
 import { audienceLabel, isPast, isToday, whenLabel, type EventRow } from "@/lib/calendar";
 import { Notice, TopNav } from "@/app/components";
@@ -9,9 +9,10 @@ import { Notice, TopNav } from "@/app/components";
 export default async function CalendarPage({ searchParams }: { searchParams: Promise<{ past?: string; error?: string; ok?: string }> }) {
   const me = await currentMember();
   if (!me) redirect("/login");
+  if (!canUseCalendar(me)) redirect("/");
   const { past, error, ok } = await searchParams;
   const showPast = past === "1";
-  const canEdit = hasRole(me, "crew") || hasRole(me, "admin");
+  const canEdit = true; // the calendar is only open to Crew and Admin, who can all edit
   const todayISO = todayStockholm();
 
   const supabase = await createClient();
@@ -33,8 +34,8 @@ export default async function CalendarPage({ searchParams }: { searchParams: Pro
   return (
     <main className="page">
       <div className="topbar">
-        <div><h1>Calendar</h1><div className="muted small">Activities of the Minhwa Association</div></div>
-        <TopNav current="calendar" isAdmin={hasRole(me, "admin")} />
+        <div><h1>Calendar</h1><div className="muted small">Activities · Crew and Admin</div></div>
+        <TopNav current="calendar" isAdmin={hasRole(me, "admin")} showCalendar />
       </div>
 
       <div className="stack">

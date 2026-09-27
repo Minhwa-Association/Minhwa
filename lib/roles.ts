@@ -21,3 +21,8 @@ export function roleLabels(roles?: string[] | null): string {
   const names = ROLES.filter((r) => roles?.includes(r.key)).map((r) => r.label);
   return names.length ? names.join(" · ") : "Member";
 }
+
+/** The calendar (tab, pages, phone feed) is for Crew and Admin only. */
+export function canUseCalendar(m: { roles?: string[] | null } | null | undefined): boolean {
+  return hasRole(m, "crew") || hasRole(m, "admin");
+}

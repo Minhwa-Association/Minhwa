@@ -2,7 +2,7 @@ import Link from "next/link";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { createClient, currentMember } from "@/lib/supabase/server";
-import { hasRole } from "@/lib/roles";
+import { canUseCalendar, hasRole } from "@/lib/roles";
 import { resetCalendarLink } from "@/app/actions";
 import { Notice, TopNav } from "@/app/components";
 import { CopyButton } from "./CopyButton";
@@ -10,6 +10,7 @@ import { CopyButton } from "./CopyButton";
 export default async function SubscribePage({ searchParams }: { searchParams: Promise<{ ok?: string; error?: string; reset?: string }> }) {
   const me = await currentMember();
   if (!me) redirect("/login");
+  if (!canUseCalendar(me)) redirect("/");
   const { ok, error, reset } = await searchParams;
   const supabase = await createClient();
   const { data: token, error: tokErr } = await supabase.rpc("my_calendar_token");
@@ -21,7 +22,7 @@ export default async function SubscribePage({ searchParams }: { searchParams: Pr
     <main className="page">
       <div className="topbar">
         <div><h1>Phone calendar</h1><div className="muted small"><Link href="/calendar">← Calendar</Link></div></div>
-        <TopNav current="calendar" isAdmin={hasRole(me, "admin")} />
+        <TopNav current="calendar" isAdmin={hasRole(me, "admin")} showCalendar />
       </div>
       <div className="stack">
         <Notice error={error ?? tokErr?.message} ok={ok} />
@@ -29,7 +30,7 @@ export default async function SubscribePage({ searchParams }: { searchParams: Pr
           <h2>Your personal link</h2>
           <div className="muted small">
             Add it once — the association&apos;s events then appear in your own calendar app and update by themselves (within about an hour).
-            You only see the events meant for you, so the link is personal. Don&apos;t forward it.
+            The link is personal (it shows what you may see). Don&apos;t forward it.
           </div>
           {token && (
             <>
