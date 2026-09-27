@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient, currentMember } from "@/lib/supabase/server";
 import { canUsePayments } from "@/lib/roles";
-import { availability, groupProducts, productLabel, type Product } from "@/lib/store";
+import { availability, groupProducts, photoUrl, productLabel, type Product } from "@/lib/store";
 import { placeOrder } from "@/app/actions";
 import { Notice, TopNav } from "@/app/components";
 
@@ -44,16 +44,24 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
                   {(g.groups.length > 1 || sg.subcategory !== "Other") && <div className="sublabel">{sg.subcategory}</div>}
                   {sg.items.map((p) => {
                     const a = availability(p);
+                    const photos = p.photos ?? [];
                     return (
-                      <label key={p.id} className="prow">
-                        <span style={{ minWidth: 0 }}>
+                      <div key={p.id} className="prow">
+                        <span className="pthumbs">
+                          {photos.map((ph, i) => (
+                            <a key={ph} href={photoUrl(ph)} target="_blank" rel="noopener noreferrer" className="pthumb small" title={`${productLabel(p)} — photo ${i + 1}`}>
+                              <img src={photoUrl(ph, true)} alt={`${productLabel(p)} ${i + 1}`} width={44} height={44} loading="lazy" />
+                            </a>
+                          ))}
+                        </span>
+                        <label htmlFor={`qty_${p.id}`} style={{ minWidth: 0, margin: 0, color: "var(--ink)", fontSize: 15 }}>
                           <span className="bold">{p.name}</span>
                           {(p.variant || p.maker) && <span className="muted"> · {[p.variant, p.maker].filter(Boolean).join(" · ")}</span>}
                           <span className={`tag ${a.cls}`} style={{ marginLeft: 8 }}>{a.text}</span>
-                        </span>
+                        </label>
                         <span className="price">{p.price_sek} kr</span>
-                        <input className="qty" type="number" inputMode="numeric" name={`qty_${p.id}`} min={0} max={99} placeholder="0" aria-label={`How many: ${productLabel(p)}`} />
-                      </label>
+                        <input id={`qty_${p.id}`} className="qty" type="number" inputMode="numeric" name={`qty_${p.id}`} min={0} max={99} placeholder="0" aria-label={`How many: ${productLabel(p)}`} />
+                      </div>
                     );
                   })}
                 </div>

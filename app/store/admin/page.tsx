@@ -7,6 +7,7 @@ import { kr } from "@/lib/payments";
 import { CATEGORY_ORDER, groupProducts, productLabel, stockLevel, type OrderItem, type OrderRow, type Product } from "@/lib/store";
 import { addProduct, adjustStock, fulfilFromStock, markCollected, saveProduct } from "@/app/actions";
 import { Notice, TopNav } from "@/app/components";
+import { PhotoUploader } from "./PhotoUploader";
 
 type Line = OrderItem & {
   product: { id: string; code: string; stock: number } | null;
@@ -113,7 +114,7 @@ export default async function StoreAdminPage({ searchParams }: { searchParams: P
         {/* 3. products */}
         <section className="card stack paysect" style={{ padding: 18 }}>
           <h2>Products <span className="count">{products.length}</span></h2>
-          <div className="muted small">Stock changes only through &ldquo;Adjust&rdquo; (+ in, − out) so every change is on record. Untick &ldquo;On the list&rdquo; to hide a product from members. Low = at or below the minimum.</div>
+          <div className="muted small">Stock changes only through &ldquo;Adjust&rdquo; (+ in, − out) so every change is on record. Untick &ldquo;On the list&rdquo; to hide a product from members. Low = at or below the minimum. Two photos per product — the first is the main picture; pictures are shrunk in your browser before upload, so a phone photo is fine.</div>
           {groups.map((g) => (
             <div key={g.category} className="stack" style={{ gap: 4 }}>
               <div className="sublabel" style={{ fontSize: 15, color: "var(--ink)" }}>{g.category}</div>
@@ -121,10 +122,13 @@ export default async function StoreAdminPage({ searchParams }: { searchParams: P
                 const lvl = stockLevel(p);
                 return (
                   <div key={p.id} className={`padmin ${p.active ? "" : "off"}`}>
+                    <div className="row between" style={{ flexWrap: "wrap", gap: 8, alignItems: "flex-start" }}>
+                      <div className="muted small">{p.code} · {sg.subcategory}</div>
+                      <PhotoUploader productId={p.id} photos={p.photos ?? []} />
+                    </div>
                     <form action={saveProduct} className="pedit">
                       <input type="hidden" name="product_id" value={p.id} />
                       <input type="hidden" name="category" value={p.category} />
-                      <div className="muted small" style={{ gridColumn: "1 / -1" }}>{p.code} · {sg.subcategory}</div>
                       <input name="name" defaultValue={p.name} aria-label="Name" required />
                       <input name="variant" defaultValue={p.variant ?? ""} placeholder="variant" aria-label="Variant" />
                       <input name="maker" defaultValue={p.maker ?? ""} placeholder="maker" aria-label="Maker" />

@@ -16,7 +16,22 @@ export type Product = {
   active: boolean;
   sort: number;
   notes: string | null;
+  photos?: string[] | null;   // v10: up to two storage paths, first = main picture
 };
+
+export const PHOTO_BUCKET = "product-photos";
+export const MAX_PHOTOS = 2;
+
+/** "abc/1700000000-1.jpg" → "abc/1700000000-1_thumb.jpg" (the 240 px copy uploaded alongside) */
+export function thumbPath(path: string): string {
+  return path.replace(/(\.[a-z0-9]+)$/i, "_thumb$1");
+}
+
+/** Public URL of a photo in the product-photos bucket (the bucket is public to read). */
+export function photoUrl(path: string, thumb = false): string {
+  const base = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").replace(/\/$/, "");
+  return `${base}/storage/v1/object/public/${PHOTO_BUCKET}/${thumb ? thumbPath(path) : path}`;
+}
 
 /** "Barim brush · S · 백산" */
 export function productLabel(p: Pick<Product, "name" | "variant" | "maker">): string {

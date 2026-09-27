@@ -7,6 +7,7 @@ import { canUseCalendar, canUsePayments, cleanRoles, hasRole } from "@/lib/roles
 import { isValidISODate } from "@/lib/dates";
 import { keyToAudience } from "@/lib/calendar";
 import { decodeStatement, parseNordea } from "@/lib/nordea";
+import { MAX_PHOTOS, PHOTO_BUCKET, thumbPath } from "@/lib/store";
 
 function backWithError(path: string, message: string): never {
   const sep = path.includes("?") ? "&" : "?";
@@ -284,6 +285,53 @@ export async function fulfilFromStock(formData: FormData) {
   if (error) backWithError("/store/admin", error.message);
   refreshStore();
   redirect("/store/admin?ok=handed");
+}
+
+// ---- store: product photos (the browser uploads the files; these only record the paths) ----
+
+type PhotoResult = { ok: true; photos: string[] } | { error: string };
+
+async function photoTreasurer() {
+  const me = await currentMember();
+  if (!me || !canUsePayments(me)) return null;
+  return me;
+}
+
+async function deletePhotoFiles(supabase: Awaited<ReturnType<typeof createClient>>, paths: string[]) {
+  const files = paths.flatMap((p) => [p, thumbPath(p)]);
+  if (files.length) await supabase.storage.from(PHOTO_BUCKET).remove(files);
+}
+
+/** A picture was uploaded → put it at position index (0 = main, 1 = second); the old file at that position is deleted. */
+export async function setPhoto(productId: string, index: number, path: string): Promise<PhotoResult> {
+  if (!(await photoTreasurer())) return { error: "Treasurer or Admin only" };
+  if (!path.startsWith(`${productId}/`)) return { error: "That file does not belong to this product" };
+  const supabase = await createClient();
+  const { data: p, error } = await supabase.from("products").select("photos").eq("id", productId).single();
+  if (error || !p) return { error: error?.message ?? "Product not found" };
+  const photos = [...((p.photos as string[] | null) ?? [])];
+  const i = Math.max(0, Math.min(index, photos.length, MAX_PHOTOS - 1));
+  const old = photos[i];
+  photos[i] = path;
+  const { error: e2 } = await supabase.from("products").update({ photos }).eq("id", productId);
+  if (e2) return { error: e2.message };
+  if (old && old !== path) await deletePhotoFiles(supabase, [old]);
+  refreshStore();
+  return { ok: true, photos };
+}
+
+export async function removePhoto(productId: string, index: number): Promise<PhotoResult> {
+  if (!(await photoTreasurer())) return { error: "Treasurer or Admin only" };
+  const supabase = await createClient();
+  const { data: p, error } = await supabase.from("products").select("photos").eq("id", productId).single();
+  if (error || !p) return { error: error?.message ?? "Product not found" };
+  const photos = [...((p.photos as string[] | null) ?? [])];
+  const [old] = photos.splice(index, 1);
+  const { error: e2 } = await supabase.from("products").update({ photos }).eq("id", productId);
+  if (e2) return { error: e2.message };
+  if (old) await deletePhotoFiles(supabase, [old]);
+  refreshStore();
+  return { ok: true, photos };
 }
 
 export async function markCollected(formData: FormData) {
