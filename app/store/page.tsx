@@ -5,16 +5,18 @@ import { canUsePayments } from "@/lib/roles";
 import { availability, groupProducts, photoUrl, productLabel, type Product } from "@/lib/store";
 import { createRequest, placeOrder } from "@/app/actions";
 import { Notice, TopNav } from "@/app/components";
+import { balanceOf, credits } from "@/lib/credits";
 
 export default async function StorePage({ searchParams }: { searchParams: Promise<{ error?: string; ok?: string }> }) {
   const me = await currentMember();
   if (!me) redirect("/login");
   const { error, ok } = await searchParams;
   const supabase = await createClient();
-  const [{ data: products }, { data: settings }, { count: openOrders }] = await Promise.all([
+  const [{ data: products }, { data: settings }, { count: openOrders }, balance] = await Promise.all([
     supabase.from("products").select("*").eq("active", true).order("sort").order("name"),
     supabase.from("settings").select("swish_payee_name").eq("id", 1).single(),
     supabase.from("orders_view").select("id", { count: "exact", head: true }).eq("member_id", me.id).in("status", ["awaiting_payment", "in_progress", "ready"]),
+    balanceOf(supabase, me.id),
   ]);
   const groups = groupProducts((products ?? []) as Product[]);
   const treasurer = canUsePayments(me);
@@ -73,8 +75,18 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
             <textarea id="note" name="note" rows={2} maxLength={300} placeholder="e.g. I can collect on Tuesday evening" />
           </div>
           <div className="footer" style={{ marginTop: 0 }}>
-            <button className="btn red">Order &amp; pay with Swish</button>
-            <div className="muted small" style={{ textAlign: "center" }}>Swish to {settings?.swish_payee_name ?? "the association"} opens on the next page with the total and a payment code.</div>
+            {balance > 0 && (
+              <label className="check credituse">
+                <input type="checkbox" name="use_credits" defaultChecked />
+                <span>Use my credits first · <b>{credits(balance)}</b> <span className="muted" style={{ fontWeight: 500 }}>(1 credit = 1 kr)</span></span>
+              </label>
+            )}
+            <button className="btn red">{balance > 0 ? "Order & pay" : "Order & pay with Swish"}</button>
+            <div className="muted small" style={{ textAlign: "center" }}>
+              {balance > 0
+                ? <>Credits cover what they can; Swish to {settings?.swish_payee_name ?? "the association"} opens on the next page for the rest.</>
+                : <>Swish to {settings?.swish_payee_name ?? "the association"} opens on the next page with the total and a payment code.</>}
+            </div>
           </div>
         </form>
 

@@ -270,3 +270,15 @@ input.qty { width: 64px; min-height: 40px; padding: 6px 8px; text-align: center;
 .sugg { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; padding: 8px 12px; border-radius: 10px; background: var(--gold); border: 1px solid var(--gold-line); }
 .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px; }
 .amt { font-family: "Fraunces", Georgia, serif; font-size: 18px; font-weight: 600; white-space: nowrap; }
+
+/* credits (v14) */
+label.check.credituse { align-self: stretch; justify-content: flex-start; min-height: 48px; font-weight: 500; }
+label.check.credituse b { font-weight: 700; }
+.creditnum { font-family: "Fraunces", Georgia, serif; font-size: 17px; font-weight: 600; margin: 0 2px; }
+.creditsum { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.creditsum .card { padding: 14px 16px; display: flex; flex-direction: column; gap: 2px; }
+.amt.plus { color: var(--green-text); }
+.amt.minus { color: var(--ink); }
+.txrow.voided > div:not(.actions) { opacity: 0.5; }
+.txrow.voided .amt { text-decoration: line-through; }
+.txrow.focus { background: var(--bg); border-radius: 10px; padding-left: 8px; padding-right: 8px; }

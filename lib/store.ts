@@ -103,6 +103,9 @@ export type OrderRow = {
   item_count: number;
   items_summary: string | null;
   status: "awaiting_payment" | "in_progress" | "ready" | "collected" | "cancelled" | "refunded";
+  swish_sek?: number | null;           // v14: the part paid (or to pay) with Swish; total_sek = swish + credits
+  credit_sek?: number | null;          // v14: the part paid with credits
+  credit_returned_sek?: number | null; // v14: credits given back (cancel / refund)
 };
 
 export type OrderItem = {

@@ -6,6 +6,7 @@ import { shortDate } from "@/lib/dates";
 import { attachTransaction, confirmMatched, confirmPayment, ignoreTransaction, importBank, rejectMatch, restoreTransaction, undoConfirmation } from "@/app/actions";
 import { Notice, TopNav } from "@/app/components";
 import { bankDate, bankWho, describePayment, kr, paymentLabel, type BankTx, type PaymentRow } from "@/lib/payments";
+import { credits } from "@/lib/credits";
 
 type Q = { error?: string; ok?: string; added?: string; dup?: string; matched?: string; sugg?: string; skipped?: string; n?: string; show?: string };
 
@@ -41,6 +42,7 @@ function PayLine({ p }: { p: PaymentRow }) {
       <b>{p.member_name ?? "Member"}</b>
       <span className="muted"> · {describePayment(p)}</span>
       {p.code && <> <span className="tag code">{p.code}</span></>}
+      {Number(p.credit_sek ?? 0) > 0 && <span className="muted small"> · + {credits(p.credit_sek)}</span>}
     </span>
   );
 }
@@ -53,7 +55,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   const showOther = q.show === "other";
 
   const supabase = await createClient();
-  const [{ data: matchedRows }, { data: waitingRows }, { data: openRows }, { data: claimedRows }, { data: confirmedRows }, { count: nOut }, { count: nIgn }, otherRes, { count: nClaims }, { count: nToPay }] = await Promise.all([
+  const [{ data: matchedRows }, { data: waitingRows }, { data: openRows }, { data: claimedRows }, { data: confirmedRows }, { count: nOut }, { count: nIgn }, otherRes, { count: nClaims }, { count: nToPay }, { data: creditRows }] = await Promise.all([
     supabase.from("bank_transactions").select(TX_SELECT).in("status", ["matched", "suggested"]).order("booked_on", { ascending: false }).order("imported_at", { ascending: false }),
     supabase.from("bank_transactions").select(TX_SELECT).eq("status", "unmatched").gt("amount_sek", 0).order("booked_on", { ascending: false }).order("imported_at", { ascending: false }),
     supabase.from("payments_view").select("*").in("status", ["pending", "claimed"]).is("bank_tx_id", null).order("member_name").order("created_at"),
@@ -66,7 +68,11 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
       : Promise.resolve({ data: null }),
     supabase.from("expense_claims").select("id", { count: "exact", head: true }).eq("status", "new"),
     supabase.from("expense_claims").select("id", { count: "exact", head: true }).eq("status", "approved"),
+    supabase.from("credit_balances").select("balance"),
   ]);
+  const creditBalances = (creditRows ?? []) as { balance: number }[];
+  const creditsOwed = creditBalances.reduce((s, b) => s + Number(b.balance), 0);
+  const creditHolders = creditBalances.filter((b) => Number(b.balance) > 0).length;
   const matched = (matchedRows ?? []) as unknown as BankTx[];
   const waiting = (waitingRows ?? []) as unknown as BankTx[];
   const open = (openRows ?? []) as PaymentRow[];
@@ -93,6 +99,14 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
             {(nToPay ?? 0) > 0 && <span className="muted small"> · {nToPay} approved, to pay</span>}
           </div>
           <Link href="/payments/receipts" className="btn line sm">Open Receipts</Link>
+        </div>
+
+        <div className="card row between" style={{ padding: "12px 16px", flexWrap: "wrap", gap: 8 }}>
+          <div className="small">
+            <b>Credits</b><span className="muted"> · for helping with activities, 1 credit = 1 kr</span>
+            {creditHolders > 0 && <span className="muted small"> · {creditHolders === 1 ? "1 member holds" : `${creditHolders} members hold`} {credits(creditsOwed)}</span>}
+          </div>
+          <Link href="/payments/credits" className="btn line sm">Open Credits</Link>
         </div>
 
         {/* 1. paste */}
@@ -249,14 +263,16 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
                 <div className="muted small">{p.confirmed_at ? shortDate(new Date(p.confirmed_at)) : "—"}</div>
                 <div style={{ minWidth: 0 }}>
                   <PayLine p={p} />
-                  <div className="muted small">{p.bank_date ? `bank ${bankDate(p.bank_date)} · ${p.bank_name ?? ""}` : "confirmed without a bank line"}</div>
+                  <div className="muted small">{p.bank_date ? `bank ${bankDate(p.bank_date)} · ${p.bank_name ?? ""}` : Number(p.amount_sek) === 0 && Number(p.credit_sek ?? 0) > 0 ? "paid with credits" : "confirmed without a bank line"}</div>
                 </div>
                 <div className="amt">{kr(p.amount_sek)}</div>
                 <div className="actions">
-                  <form action={undoConfirmation}>
-                    <input type="hidden" name="payment_id" value={p.id} />
-                    <button className="btn quiet sm">Undo</button>
-                  </form>
+                  {!(Number(p.amount_sek) === 0 && Number(p.credit_sek ?? 0) > 0) && (
+                    <form action={undoConfirmation}>
+                      <input type="hidden" name="payment_id" value={p.id} />
+                      <button className="btn quiet sm">Undo</button>
+                    </form>
+                  )}
                 </div>
               </div>
             ))}

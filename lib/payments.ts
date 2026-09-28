@@ -46,6 +46,8 @@ export type PaymentRow = {
   bank_name: string | null;
   order_id?: string | null;          // v9: material payments
   items_summary?: string | null;     // v9: "2× Barim brush · S · 백산, 1× Hanji, lacquered"
+  credit_sek?: number | null;        // v14: part paid with credits (amount_sek is the Swish part)
+  credit_returned_sek?: number | null;
 };
 
 /** "05/10 Mon Day" for a seat · "Store · 2× Barim brush…" for an order · otherwise the Swish message without its code */

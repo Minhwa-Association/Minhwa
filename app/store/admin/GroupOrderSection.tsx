@@ -2,13 +2,31 @@ import Link from "next/link";
 import { shortDate } from "@/lib/dates";
 import { kr } from "@/lib/payments";
 import { BATCH_STATUS_LABEL, batchCosts, defaultBatchName, krw, priceFromCost, type Batch, type PurchaseListRow } from "@/lib/store";
+import { credits, refundSplit } from "@/lib/credits";
 import { addAllWaitingToBatch, addLineToBatch, markBatchArrived, markBatchOrdered, refundLine, removeLineFromBatch, saveBatchCosts, setProductPrice, setRestock, startBatch, suggestRestock } from "@/app/actions";
 
 export type WaitingLine = {
   id: string; order_id: string; qty: number; name: string; unit_price_sek: number; status: string; batch_id: string | null; updated_at: string;
   product: { id: string; code: string; stock: number } | null;
-  order: { id: string; created_at: string; note: string | null; member: { name: string } | null; payment: { code: string | null; status: string; confirmed_at: string | null } | null } | null;
+  order: { id: string; created_at: string; note: string | null; member: { name: string } | null; payment: { code: string | null; status: string; confirmed_at: string | null; credit_sek?: number | null; credit_returned_sek?: number | null } | null } | null;
 };
+
+/** Refund one paid line: credits on the order go back first (by themselves), only the rest is sent with Swish. */
+export function RefundButton({ line }: { line: WaitingLine }) {
+  const split = refundSplit(line.qty * line.unit_price_sek, line.order?.payment);
+  const label = split.credits === 0 ? "Refunded via Swish"
+    : split.swish === 0 ? `Refund as ${credits(split.credits)}`
+    : `Refund: ${split.credits} credits + ${kr(split.swish)} via Swish`;
+  const title = split.credits === 0 ? "Tick after you have sent the money back with Swish"
+    : split.swish === 0 ? `Paid with credits — ${credits(split.credits)} go back to the member, nothing to send`
+    : `Send ${kr(split.swish)} back with Swish first, then tick — the ${credits(split.credits)} go back by themselves`;
+  return (
+    <form action={refundLine}>
+      <input type="hidden" name="item_id" value={line.id} />
+      <button className="btn quiet sm" title={title}>{label}</button>
+    </form>
+  );
+}
 
 /** Group order from Korea: the active batch (open or ordered), its shopping list, costs; or the form to start one. */
 export function GroupOrderSection({ batch, list, waiting, onBatch, past, krwPerSek }: {
@@ -67,7 +85,7 @@ export function GroupOrderSection({ batch, list, waiting, onBatch, past, krwPerS
               {open ? (
                 <form action={addLineToBatch}><input type="hidden" name="item_id" value={l.id} /><button className="btn ink sm">Put on group order</button></form>
               ) : <span className="muted small">{batch ? "next group order" : "start a group order"}</span>}
-              <form action={refundLine}><input type="hidden" name="item_id" value={l.id} /><button className="btn quiet sm" title="Tick after you have sent the money back with Swish">Refunded via Swish</button></form>
+              <RefundButton line={l} />
             </div>
           </div>
         ))}
@@ -130,7 +148,7 @@ export function GroupOrderSection({ batch, list, waiting, onBatch, past, krwPerS
                 <div style={{ minWidth: 0 }}><b>{l.order?.member?.name ?? "Member"}</b> <span className="muted small">· {l.order?.payment?.code}</span> · {l.qty}× {l.name} <span className="muted small">· {kr(l.qty * l.unit_price_sek)}</span></div>
                 <div className="actions" style={{ gridColumn: "auto" }}>
                   {open && <form action={removeLineFromBatch}><input type="hidden" name="item_id" value={l.id} /><button className="btn quiet sm">Take off</button></form>}
-                  <form action={refundLine}><input type="hidden" name="item_id" value={l.id} /><button className="btn quiet sm" title="Tick after you have sent the money back with Swish">Refunded via Swish</button></form>
+                  <RefundButton line={l} />
                 </div>
               </div>
             ))}

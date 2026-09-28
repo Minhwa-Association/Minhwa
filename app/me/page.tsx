@@ -6,6 +6,7 @@ import { hm, longDate, parseISODate, sessionLabel, toISODate } from "@/lib/dates
 import { paymentClass } from "@/lib/payments";
 import { cancelBooking } from "@/app/actions";
 import { PaymentTag, Notice, TopNav } from "@/app/components";
+import { credits, type CreditBalance } from "@/lib/credits";
 
 export default async function MePage({ searchParams }: { searchParams: Promise<{ error?: string; ok?: string }> }) {
   const me = await currentMember();
@@ -16,7 +17,11 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
   const { data: bookings } = await supabase.from("bookings")
     .select("id, date, status, slot:slots(id, session, start_time, end_time), payment:payments(id, code, amount_sek, status)")
     .eq("member_id", me.id).eq("status", "booked").gte("date", todayISO).order("date");
-  const { data: settings } = await supabase.from("settings").select("cancel_deadline_days").eq("id", 1).single();
+  const [{ data: settings }, { data: creditRow }] = await Promise.all([
+    supabase.from("settings").select("cancel_deadline_days").eq("id", 1).single(),
+    supabase.from("credit_balances").select("balance, granted_this_year").eq("member_id", me.id).maybeSingle(),
+  ]);
+  const myCredits = creditRow as Pick<CreditBalance, "balance" | "granted_this_year"> | null;
   const list = bookings ?? [];
 
   return (
@@ -27,6 +32,12 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
       </div>
       <div className="stack">
         <Notice error={error} ok={ok} />
+        {myCredits && (
+          <div className="card row between creditcard" style={{ padding: "12px 16px", flexWrap: "wrap", gap: 8 }}>
+            <div className="small"><b>Credits</b> <span className="creditnum">{credits(myCredits.balance)}</span><span className="muted"> · 1 credit = 1 kr — for the Store or a seat</span></div>
+            <Link href="/me/credits" className="btn line sm">History</Link>
+          </div>
+        )}
         {list.length === 0 && (
           <div className="card dashed" style={{ padding: 24, textAlign: "center" }}>
             No upcoming seats. <Link href="/" style={{ color: "var(--red)", fontWeight: 600 }}>Pick one on the board</Link>.

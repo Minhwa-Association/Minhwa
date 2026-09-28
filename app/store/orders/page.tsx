@@ -6,6 +6,7 @@ import { kr } from "@/lib/payments";
 import { ORDER_STATUS_LABEL, REQUEST_STATUS_LABEL, orderClass, orderTitle, productLabel, type OrderRow, type RequestRow } from "@/lib/store";
 import { cancelOrder } from "@/app/actions";
 import { Notice, TopNav } from "@/app/components";
+import { credits } from "@/lib/credits";
 
 export default async function MyOrdersPage({ searchParams }: { searchParams: Promise<{ error?: string; ok?: string }> }) {
   const me = await currentMember();
@@ -31,8 +32,8 @@ export default async function MyOrdersPage({ searchParams }: { searchParams: Pro
         <span className={`tag ${orderClass(o.status) || "unpaid"}`}>{ORDER_STATUS_LABEL[o.status]}</span>
       </div>
       <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-        <span className="bold">{kr(o.total_sek)}</span>
-        {o.status === "awaiting_payment" && o.payment_status === "pending" && <Link href={`/store/orders/${o.id}`} className="btn red sm">Pay {kr(o.total_sek)}</Link>}
+        <span className="bold">{kr(o.total_sek)}{Number(o.credit_sek ?? 0) > 0 && <span className="muted small" style={{ fontWeight: 500 }}> · {credits(o.credit_sek)}</span>}</span>
+        {o.status === "awaiting_payment" && o.payment_status === "pending" && <Link href={`/store/orders/${o.id}`} className="btn red sm">Pay {kr(o.swish_sek ?? o.total_sek)}</Link>}
         {(o.status !== "awaiting_payment" || o.payment_status !== "pending") && <Link href={`/store/orders/${o.id}`} className="btn line sm">Details</Link>}
         {o.status === "awaiting_payment" && (
           <form action={cancelOrder} className="grow" style={{ display: "flex", justifyContent: "flex-end" }}>

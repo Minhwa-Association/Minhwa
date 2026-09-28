@@ -5,20 +5,25 @@ import { canUsePayments } from "@/lib/roles";
 import { shortDate } from "@/lib/dates";
 import { kr } from "@/lib/payments";
 import { CATEGORY_ORDER, groupProducts, krw, priceFromCost, productLabel, stockLevel, type Batch, type OrderRow, type Product, type PurchaseListRow, type RequestRow } from "@/lib/store";
-import { addProduct, adjustStock, fulfilFromStock, markCollected, refundLine, saveProduct } from "@/app/actions";
+import { addProduct, adjustStock, fulfilFromStock, markCollected, saveProduct } from "@/app/actions";
+import { credits } from "@/lib/credits";
 import { Notice, TopNav } from "@/app/components";
 import { PhotoUploader } from "./PhotoUploader";
-import { GroupOrderSection, type WaitingLine } from "./GroupOrderSection";
+import { GroupOrderSection, RefundButton, type WaitingLine } from "./GroupOrderSection";
 import { RequestsSection } from "./RequestsSection";
 
 type Movement = { id: string; qty: number; kind: string; note: string | null; created_at: string; product: { name: string; variant: string | null; code: string } | null };
-type Q = { error?: string; ok?: string; n?: string };
+type Q = { error?: string; ok?: string; n?: string; c?: string; s?: string };
 
-const LINE_SELECT = "id, order_id, qty, name, unit_price_sek, status, batch_id, updated_at, product:products(id, code, stock), order:orders(id, created_at, note, member:members(name), payment:payments(code, status, confirmed_at))";
+const LINE_SELECT = "id, order_id, qty, name, unit_price_sek, status, batch_id, updated_at, product:products(id, code, stock), order:orders(id, created_at, note, member:members(name), payment:payments(code, status, confirmed_at, credit_sek, credit_returned_sek))";
 
 function okText(q: Q): string | undefined {
   const n = Number(q.n ?? 0);
   if (q.ok === "batch_lines") return `${n} line${n === 1 ? "" : "s"} put on the group order.`;
+  if (q.ok === "refunded_credits") {
+    const sw = Number(q.s ?? 0);
+    return `Line refunded — ${credits(q.c)} went back to the member${sw > 0 ? `, and ${kr(sw)} was to be sent with Swish` : ""}.`;
+  }
   if (q.ok === "restock") return n ? `Restock added for ${n} product${n === 1 ? "" : "s"} at or below the minimum.` : "Every product on the list is above its minimum — nothing added.";
   return undefined;
 }
@@ -103,7 +108,7 @@ export default async function StoreAdminPage({ searchParams }: { searchParams: P
                     </div>
                     <div className="actions" style={{ gridColumn: "auto" }}>
                       {l.status === "paid" && <form action={fulfilFromStock}><input type="hidden" name="item_id" value={l.id} /><button className="btn ink sm">From stock → ready</button></form>}
-                      {l.status === "paid" && <form action={refundLine}><input type="hidden" name="item_id" value={l.id} /><button className="btn quiet sm" title="Tick after you have sent the money back with Swish">Refunded via Swish</button></form>}
+                      {l.status === "paid" && <RefundButton line={l} />}
                       {l.status === "ready" && <form action={markCollected}><input type="hidden" name="item_id" value={l.id} /><button className="btn line sm">Collected</button></form>}
                     </div>
                   </div>
@@ -128,8 +133,8 @@ export default async function StoreAdminPage({ searchParams }: { searchParams: P
               <div key={o.id} className="txrow">
                 <div className="muted small">{shortDate(new Date(o.created_at))}</div>
                 <div style={{ minWidth: 0 }}><b>{o.member_name}</b> <span className="tag code">{o.code}</span><span className="muted small"> · {o.items_summary}{o.payment_status === "claimed" ? " · says they have paid" : ""}</span></div>
-                <div className="amt">{kr(o.total_sek)}</div>
-                <div className="actions"><Link href={`/store/orders/${o.id}`} className="btn quiet sm">Details</Link></div>
+                <div className="amt">{kr(o.swish_sek ?? o.total_sek)}</div>
+                <div className="actions">{Number(o.credit_sek ?? 0) > 0 && <span className="muted small">+ {credits(o.credit_sek)} ·</span>}<Link href={`/store/orders/${o.id}`} className="btn quiet sm">Details</Link></div>
               </div>
             ))}
           </div>

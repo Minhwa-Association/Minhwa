@@ -77,6 +77,11 @@ export function Notice({ error, ok, text }: { error?: string; ok?: string; text?
   if (ok === "emails_saved") return <div className="notice ok">Addresses saved — receipts sent from them will be yours.</div>;
   if (ok === "receipt_sent") return <div className="notice ok">Receipt sent to the treasurer. You will see the answer here.</div>;
   if (ok === "withdrawn") return <div className="notice ok">Receipt taken back.</div>;
+  if (ok === "credits_used") return <div className="notice ok">Credits used.</div>;
+  if (ok === "credits_released") return <div className="notice ok">Credits taken off — they are back in your balance. Pay the whole amount with Swish.</div>;
+  if (ok === "credits_given") return <div className="notice ok">Credits given.</div>;
+  if (ok === "credits_adjusted") return <div className="notice ok">Balance corrected.</div>;
+  if (ok === "credits_voided") return <div className="notice ok">Credits taken back.</div>;
   return null;
 }
 

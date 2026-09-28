@@ -189,11 +189,13 @@ export async function placeOrder(formData: FormData) {
   if (items.length === 0) backWithError("/store", "Choose at least one item — enter how many you want.");
   const note = String(formData.get("note") || "").trim() || null;
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("place_order", { p_items: items, p_note: note });
+  const useCredits = formData.get("use_credits") === "on";
+  const { data, error } = await supabase.rpc("place_order", { p_items: items, p_note: note, p_use_credits: useCredits });
   if (error) backWithError("/store", error.message);
   revalidatePath("/store");
   revalidatePath("/store/orders");
   revalidatePath("/payments");
+  if (useCredits) revalidatePath("/me");
   redirect(`/store/orders/${data}`);
 }
 
@@ -379,8 +381,10 @@ export async function markBatchArrived(formData: FormData) {
 
 export async function refundLine(formData: FormData) {
   await treasurer();
-  await storeRpc("refund_order_item", { p_item_id: String(formData.get("item_id")), p_note: String(formData.get("note") || "") || null });
-  redirect(`${ADMIN}?ok=refunded`);
+  const res = (await storeRpc("refund_order_item", { p_item_id: String(formData.get("item_id")), p_note: String(formData.get("note") || "") || null })) as { credits?: number; swish?: number } | null;
+  const c = Number(res?.credits ?? 0), sw = Number(res?.swish ?? 0);
+  revalidatePath("/me");
+  redirect(c > 0 ? `${ADMIN}?ok=refunded_credits&c=${c}&s=${sw}` : `${ADMIN}?ok=refunded`);
 }
 
 /** Set a product's price (and, when given, its latest cost) — from the shopping list's "Set price". */
@@ -805,6 +809,92 @@ export async function withdrawReceiptClaim(formData: FormData) {
   await service.from("expense_claims").delete().eq("id", claimId);
   refreshReceipts();
   redirect(`${MY_RECEIPTS}?ok=withdrawn`);
+}
+
+// ---- credits (1 credit = 1 kr) ------------------------------------------------
+
+const CREDITS = "/payments/credits";
+
+function refreshCredits() {
+  revalidatePath(CREDITS);
+  revalidatePath("/me");
+  revalidatePath("/me/credits");
+  revalidatePath("/store");
+  revalidatePath("/store/orders");
+  revalidatePath("/store/admin");
+  revalidatePath("/payments");
+  revalidatePath("/");
+}
+
+/** Only paths inside the app — the form says where to come back to. */
+function safeBack(formData: FormData, fallback: string): string {
+  const back = String(formData.get("back") || "");
+  return back.startsWith("/") && !back.startsWith("//") ? back : fallback;
+}
+
+/** Member: put my credits on an unpaid seat or order — Swish pays the rest. */
+export async function applyCredits(formData: FormData) {
+  const me = await currentMember();
+  if (!me) redirect("/login");
+  const back = safeBack(formData, "/me");
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("apply_credits", { p_payment_id: String(formData.get("payment_id")) });
+  if (error) backWithError(back, error.message);
+  refreshCredits();
+  redirect(`${back}${back.includes("?") ? "&" : "?"}ok=credits_used&c=${Number(data ?? 0)}`);
+}
+
+/** Member: take the credits off an unpaid payment and pay it all with Swish. */
+export async function releaseCredits(formData: FormData) {
+  const me = await currentMember();
+  if (!me) redirect("/login");
+  const back = safeBack(formData, "/me");
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("release_credits", { p_payment_id: String(formData.get("payment_id")) });
+  if (error) backWithError(back, error.message);
+  refreshCredits();
+  redirect(withOk(back, "credits_released"));
+}
+
+/** Treasurer: give credits for an activity. */
+export async function giveCredits(formData: FormData) {
+  await treasurer();
+  const memberId = String(formData.get("member_id") || "");
+  const amount = Math.round(Number(String(formData.get("amount") || "").replace(/[^0-9-]/g, "")));
+  const note = String(formData.get("note") || "").trim() || null;
+  const eventId = String(formData.get("event_id") || "") || null;
+  if (!memberId) backWithError(CREDITS, "Pick the member.");
+  if (!Number.isFinite(amount) || amount <= 0) backWithError(CREDITS, "Enter how many credits, a whole number.");
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("give_credits", { p_member_id: memberId, p_amount: amount, p_note: note, p_event_id: eventId });
+  if (error) backWithError(CREDITS, error.message);
+  refreshCredits();
+  redirect(`${CREDITS}?ok=credits_given&c=${amount}&m=${memberId}`);
+}
+
+/** Treasurer: correct a balance, + or − (with a reason). */
+export async function adjustCredits(formData: FormData) {
+  await treasurer();
+  const memberId = String(formData.get("member_id") || "");
+  const back = `${CREDITS}?m=${memberId}`;
+  const amount = Math.round(Number(String(formData.get("amount") || "").replace(/[−–]/g, "-").replace(/[^0-9-]/g, "")));
+  if (!Number.isFinite(amount) || amount === 0) backWithError(back, "Enter a number of credits, e.g. 50 or -50.");
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("adjust_credits", { p_member_id: memberId, p_amount: amount, p_note: String(formData.get("note") || "") });
+  if (error) backWithError(back, error.message);
+  refreshCredits();
+  redirect(withOk(back, "credits_adjusted"));
+}
+
+/** Treasurer: take back credits that were given (only while the member still has them). */
+export async function voidCredits(formData: FormData) {
+  await treasurer();
+  const back = safeBack(formData, CREDITS);
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("void_credits", { p_movement_id: String(formData.get("movement_id")) });
+  if (error) backWithError(back, error.message);
+  refreshCredits();
+  redirect(withOk(back, "credits_voided"));
 }
 
 // ---- calendar ---------------------------------------------------------------

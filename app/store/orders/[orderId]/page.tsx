@@ -7,14 +7,15 @@ import { kr } from "@/lib/payments";
 import { formatSwishNumber, swishUrl } from "@/lib/swish";
 import { LINE_STATUS_LABEL, ORDER_STATUS_LABEL, orderTitle, type BatchPublic, type OrderItem, type OrderRow } from "@/lib/store";
 import { shortDate } from "@/lib/dates";
-import { cancelOrder, claimPayment } from "@/app/actions";
+import { applyCredits, cancelOrder, claimPayment, releaseCredits } from "@/app/actions";
+import { balanceOf, credits, creditsHeld } from "@/lib/credits";
 import { Chevron, Notice } from "@/app/components";
 
-export default async function OrderPage({ params, searchParams }: { params: Promise<{ orderId: string }>; searchParams: Promise<{ error?: string; ok?: string }> }) {
+export default async function OrderPage({ params, searchParams }: { params: Promise<{ orderId: string }>; searchParams: Promise<{ error?: string; ok?: string; c?: string }> }) {
   const me = await currentMember();
   if (!me) redirect("/login");
   const { orderId } = await params;
-  const { error, ok } = await searchParams;
+  const { error, ok, c } = await searchParams;
   const supabase = await createClient();
   const [{ data: order }, { data: items }, { data: settings }] = await Promise.all([
     supabase.from("orders_view").select("*").eq("id", orderId).maybeSingle(),
@@ -27,13 +28,14 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   if (!mine && !canUsePayments(me)) notFound();
   const lines = (items ?? []) as OrderItem[];
   const batchIds = [...new Set(lines.map((l) => l.batch_id).filter((x): x is string => !!x))];
-  const [{ data: payment }, { data: batchRows }] = await Promise.all([
+  const [{ data: payment }, { data: batchRows }, balance] = await Promise.all([
     o.payment_id
-      ? supabase.from("payments").select("id, code, note, amount_sek, status").eq("id", o.payment_id).single()
+      ? supabase.from("payments").select("id, code, note, amount_sek, status, credit_sek, credit_returned_sek").eq("id", o.payment_id).single()
       : Promise.resolve({ data: null }),
     batchIds.length
       ? supabase.from("group_orders_public").select("*").in("id", batchIds)
       : Promise.resolve({ data: [] as BatchPublic[] }),
+    mine ? balanceOf(supabase, me.id) : Promise.resolve(0),
   ]);
   const batchById = new Map(((batchRows ?? []) as BatchPublic[]).map((b) => [b.id, b]));
   const lineStatus = (l: OrderItem) => {
@@ -46,15 +48,19 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
 
   const payee = settings?.swish_number ?? "";
   const message = payment?.note ?? `${o.code ?? ""} Store ${o.member_name}`.trim();
-  const link = swishUrl({ payee, amountSek: Number(o.total_sek ?? 0), message });
+  const creditUsed = Number(payment?.credit_sek ?? 0);
+  const creditBack = Number(payment?.credit_returned_sek ?? 0);
+  const swish = Number(payment?.amount_sek ?? o.total_sek ?? 0);     // the part to pay with Swish
+  const link = swishUrl({ payee, amountSek: swish, message });
   const unpaid = o.status === "awaiting_payment";
   const pending = o.payment_status === "pending";
   const claimed = o.payment_status === "claimed";
   const here = `/store/orders/${o.id}`;
 
   const headline = o.status === "awaiting_payment" ? (claimed ? "Awaiting confirmation" : "Order placed") : ORDER_STATUS_LABEL[o.status];
+  const okText = ok === "credits_used" && c ? (unpaid ? `${credits(c)} used — pay the rest with Swish.` : `Paid with ${credits(c)}.`) : undefined;
   const sub = o.status === "awaiting_payment"
-    ? (claimed ? "The treasurer confirms your Swish payment when it shows up in the bank, then prepares your items." : "Pay with Swish to finish — the total and a payment code are pre-filled.")
+    ? (claimed ? "The treasurer confirms your Swish payment when it shows up in the bank, then prepares your items." : `Pay with Swish to finish — the ${creditUsed > 0 ? "amount left" : "total"} and a payment code are pre-filled.`)
     : o.status === "in_progress" ? "Paid. Items in stock are handed out at the studio; the rest come with the next group order from Korea."
     : o.status === "ready" ? "Ready — collect it at your next visit to the studio."
     : o.status === "collected" ? "All collected. Thank you."
@@ -68,7 +74,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
           <h1 style={{ fontSize: 32 }}>{headline}</h1>
           <div className="muted">{sub}</div>
         </div>
-        <Notice error={error} ok={ok} />
+        <Notice error={error} ok={ok} text={okText} />
 
         <div className="card stack" style={{ gap: 12, padding: 18 }}>
           <div className="kv"><span className="k">{orderTitle(o)}</span><span className="v">{longDate(new Date(o.created_at))}</span></div>
@@ -83,6 +89,13 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
           {o.note && <div className="muted small">Note: {o.note}</div>}
           <div className="divider" />
           <div className="kv"><span className="k">Total</span><span className="amount">{kr(o.total_sek)}</span></div>
+          {creditUsed > 0 && (
+            <>
+              <div className="kv"><span className="k">Paid with credits</span><span className="v">{credits(creditUsed)}</span></div>
+              <div className="kv"><span className="k">{unpaid ? "Left to pay with Swish" : "Paid with Swish"}</span><span className="v">{kr(swish)}</span></div>
+              {creditBack > 0 && <div className="kv"><span className="k">Credits given back</span><span className="v">{credits(creditBack)}</span></div>}
+            </>
+          )}
           {o.code && <div className="kv"><span className="k">Payment code</span><span className="v"><span className="tag code">{o.code}</span></span></div>}
         </div>
 
@@ -91,7 +104,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
             <div className="muted small bold">Pre-filled in Swish</div>
             <div className="kv"><span className="k">To</span><span className="v">{settings?.swish_payee_name} · {formatSwishNumber(payee)}</span></div>
             <div className="kv"><span className="k">Message</span><span className="v">{message}</span></div>
-            <div className="muted small">On a computer? Open Swish on your phone and send {kr(o.total_sek)} to {formatSwishNumber(payee)} with the message above — keep the code, it is how your payment is recognised.</div>
+            <div className="muted small">On a computer? Open Swish on your phone and send {kr(swish)} to {formatSwishNumber(payee)} with the message above — keep the code, it is how your payment is recognised.</div>
           </div>
         )}
       </div>
@@ -99,7 +112,21 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
       <div className="footer">
         {unpaid && mine && (
           <>
-            <a href={link} className="btn ink">Open Swish and pay</a>
+            <a href={link} className="btn ink">Open Swish and pay {kr(swish)}</a>
+            {pending && payment && balance > 0 && (
+              <form action={applyCredits}>
+                <input type="hidden" name="payment_id" value={payment.id} />
+                <input type="hidden" name="back" value={here} />
+                <button className="btn line">{balance >= swish ? `Pay with ${credits(swish)} instead` : `Use my ${credits(balance)}, Swish the rest`}</button>
+              </form>
+            )}
+            {pending && payment && creditsHeld(payment) > 0 && (
+              <form action={releaseCredits}>
+                <input type="hidden" name="payment_id" value={payment.id} />
+                <input type="hidden" name="back" value={here} />
+                <button className="btn quiet">Keep my credits — pay all with Swish</button>
+              </form>
+            )}
             {pending && payment && (
               <form action={claimPayment}>
                 <input type="hidden" name="payment_id" value={payment.id} />
