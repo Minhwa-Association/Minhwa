@@ -98,6 +98,11 @@ h2 { font-size: 22px; }
 .tag.pending { color: var(--gold-text); }
 .tag.unpaid { color: var(--muted); border: 1px solid var(--line); }
 .tag.extra { color: var(--white); }
+/* waiting list (v15) */
+.tag.wait { color: var(--ink); border: 1.5px dashed var(--ink); }
+.card.wait { background: transparent; border: 1.5px dashed var(--ink); }
+.card.wait.mine { background: var(--card); }
+.avatar.ordinal { background: transparent; border: 1.5px dashed var(--ink); color: var(--ink); font-family: "Fraunces", Georgia, serif; }
 
 .progress { height: 8px; border-radius: 999px; background: var(--divider); overflow: hidden; }
 .progress > div { height: 8px; background: var(--red); }
@@ -146,6 +151,8 @@ input.code { font-size: 28px; letter-spacing: 0.3em; text-align: center; font-we
 .aperson.pending { background: var(--gold); border-color: var(--gold-line); }
 .aperson.extra { background: var(--ink); border-color: var(--ink); color: var(--white); }
 .aperson.empty { background: transparent; border: 1.5px dashed var(--dash); color: var(--muted); cursor: default; }
+.aperson.wait { background: transparent; border: 1.5px dashed var(--ink); color: var(--ink); }
+.awaiting { display: flex; flex-direction: column; gap: 6px; padding-top: 6px; border-top: 1px dashed var(--line); }
 .aperson small { font-weight: 500; font-size: 12px; }
 @media (max-width: 900px) {
   .admingrid { grid-template-columns: 1fr; }

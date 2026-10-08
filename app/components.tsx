@@ -43,6 +43,8 @@ export function Notice({ error, ok, text }: { error?: string; ok?: string; text?
   if (text) return <div className="notice ok">{text}</div>;
   if (ok === "cancelled") return <div className="notice ok">Booking cancelled.</div>;
   if (ok === "paid") return <div className="notice ok">Thanks — marked as awaiting confirmation. The treasurer confirms it when it shows up in the bank.</div>;
+  if (ok === "waiting") return <div className="notice ok">You are on the waiting list. When a seat frees up it is yours automatically — you pay then. You can leave the list any time.</div>;
+  if (ok === "left") return <div className="notice ok">Taken off the waiting list.</div>;
   if (ok === "saved") return <div className="notice ok">Saved.</div>;
   if (ok === "event_saved") return <div className="notice ok">Event saved.</div>;
   if (ok === "event_deleted") return <div className="notice ok">Event deleted.</div>;
@@ -93,4 +95,9 @@ export function PaymentTag({ status, extra }: { status?: string | null; extra?: 
   if (status === "claimed") return <span className={`tag ${cls}`}>{paymentLabel(status)}</span>;
   if (status === "pending") return <span className="tag unpaid">{paymentLabel(status)}</span>;
   return null;
+}
+
+/** "Waiting · #2" pill for a waiting-list entry. */
+export function WaitTag({ position }: { position: number }) {
+  return <span className="tag wait">Waiting · #{position}</span>;
 }

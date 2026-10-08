@@ -3,18 +3,23 @@ import { notFound, redirect } from "next/navigation";
 import { createClient, currentMember } from "@/lib/supabase/server";
 import { hm, longDate, parseISODate, sessionLabel } from "@/lib/dates";
 import { formatSwishNumber, swishUrl } from "@/lib/swish";
-import { applyCredits, claimPayment, releaseCredits } from "@/app/actions";
+import { applyCredits, releaseCredits } from "@/app/actions";
 import { Chevron, Notice } from "@/app/components";
 import { balanceOf, credits, creditsHeld } from "@/lib/credits";
+import { SwishPay } from "./SwishPay";
 
-export default async function PayPage({ params, searchParams }: { params: Promise<{ bookingId: string }>; searchParams: Promise<{ error?: string; ok?: string; c?: string }> }) {
+/**
+ * /pay/[bookingId]            — came from the seat page (default) → goes back there afterwards
+ * /pay/[bookingId]?from=me    — came from My seats → goes back to My seats
+ */
+export default async function PayPage({ params, searchParams }: { params: Promise<{ bookingId: string }>; searchParams: Promise<{ error?: string; ok?: string; c?: string; from?: string }> }) {
   const me = await currentMember();
   if (!me) redirect("/login");
   const { bookingId } = await params;
-  const { error, ok, c } = await searchParams;
+  const { error, ok, c, from } = await searchParams;
   const supabase = await createClient();
   const { data: b } = await supabase.from("bookings")
-    .select("id, date, member_id, status, slot:slots(id, session, start_time, end_time, weekday, capacity, instructor:members!slots_instructor_id_fkey(name)), payment:payments(id, code, amount_sek, status, note, credit_sek, credit_returned_sek)")
+    .select("id, date, member_id, status, promoted_at, slot:slots(id, session, start_time, end_time, weekday, capacity, instructor:members!slots_instructor_id_fkey(name)), payment:payments(id, code, amount_sek, status, note, credit_sek, credit_returned_sek)")
     .eq("id", bookingId).single();
   if (!b || b.member_id !== me.id) notFound();
   const [{ data: settings }, balance] = await Promise.all([
@@ -34,17 +39,28 @@ export default async function PayPage({ params, searchParams }: { params: Promis
   const creditUsed = Number(payment.credit_sek ?? 0);
   const creditBack = Number(payment.credit_returned_sek ?? 0);
   const pending = payment.status === "pending";
-  const here = `/pay/${b.id}`;
+  const fromWaitlist = !!b.promoted_at;
+  const fromMe = from === "me";
+  const back = fromMe ? "/me" : `/slot/${slot.id}/${b.date}`;
+  const backLabel = fromMe ? "My seats" : "the seat";
+  const here = `/pay/${b.id}${fromMe ? "?from=me" : ""}`;
   const onlyCredits = confirmed && creditUsed > 0 && payment.amount_sek === 0;
+  const creditsCoverAll = pending && balance >= payment.amount_sek;
   const okText = ok === "credits_used" && c ? (confirmed ? `Paid with ${credits(c)}. See you there.` : `${credits(c)} used — pay the rest with Swish.`) : undefined;
+  const subtitle = cancelled
+    ? `This booking was cancelled.${creditBack > 0 ? ` ${credits(creditBack)} went back to your balance.` : ""}`
+    : confirmed ? "This seat is paid. See you there."
+    : claimed ? "The treasurer confirms your Swish payment when it shows up in the bank."
+    : fromWaitlist ? `This seat came to you from the waiting list — ${balance > 0 ? "pay with credits or Swish" : "pay with Swish"} to keep it.`
+    : `Your seat is held — ${balance > 0 ? "pay with credits or Swish" : "pay with Swish"} to finish.`;
 
   return (
     <main className="page">
       <div style={{ paddingTop: 20 }} className="stack">
-        <Link href={`/slot/${slot.id}/${b.date}`} className="row muted" style={{ minHeight: 44, fontWeight: 500 }}><Chevron dir="left" /> Back to the seat</Link>
+        <Link href={back} className="row muted" style={{ minHeight: 44, fontWeight: 500 }}><Chevron dir="left" /> Back to {backLabel}</Link>
         <div>
-          <h1 style={{ fontSize: 32 }}>{cancelled ? "Cancelled" : onlyCredits ? "Paid with credits" : confirmed ? "Paid" : claimed ? "Awaiting confirmation" : "Seat booked"}</h1>
-          <div className="muted">{cancelled ? `This booking was cancelled.${creditBack > 0 ? ` ${credits(creditBack)} went back to your balance.` : ""}` : confirmed ? "This seat is paid. See you there." : claimed ? "The treasurer confirms your Swish payment when it shows up in the bank." : `Your seat is held — ${balance > 0 ? "pay with credits or Swish" : "pay with Swish"} to finish.`}</div>
+          <h1 style={{ fontSize: 32 }}>{cancelled ? "Cancelled" : onlyCredits ? "Paid with credits" : confirmed ? "Paid" : claimed ? "Awaiting confirmation" : fromWaitlist ? "You got a seat" : "Seat booked"}</h1>
+          <div className="muted">{subtitle}</div>
         </div>
         <Notice error={error} ok={ok} text={okText} />
 
@@ -76,14 +92,14 @@ export default async function PayPage({ params, searchParams }: { params: Promis
       <div className="footer">
         {!confirmed && !cancelled && (
           <>
-            {pending && balance >= payment.amount_sek && (
+            {creditsCoverAll && (
               <form action={applyCredits}>
                 <input type="hidden" name="payment_id" value={payment.id} />
                 <input type="hidden" name="back" value={here} />
                 <button className="btn red">Pay with {credits(payment.amount_sek)}</button>
               </form>
             )}
-            <a href={link} className={`btn ${pending && balance >= payment.amount_sek ? "line" : "ink"}`}>Open Swish and pay {payment.amount_sek} kr</a>
+            <SwishPay link={link} amount={payment.amount_sek} paymentId={payment.id} back={back} backLabel={backLabel} claimed={claimed} primary={!creditsCoverAll} />
             {pending && balance > 0 && balance < payment.amount_sek && (
               <form action={applyCredits}>
                 <input type="hidden" name="payment_id" value={payment.id} />
@@ -98,17 +114,10 @@ export default async function PayPage({ params, searchParams }: { params: Promis
                 <button className="btn quiet">Keep my credits — pay all with Swish</button>
               </form>
             )}
-            {!claimed && (
-              <form action={claimPayment}>
-                <input type="hidden" name="payment_id" value={payment.id} />
-                <button className="btn line">I have paid</button>
-              </form>
-            )}
-            <Link href="/me" className="btn quiet">Hold the seat, pay later</Link>
-            <div className="muted small" style={{ textAlign: "center" }}>After paying, tap &ldquo;I have paid&rdquo; — you show as awaiting confirmation until the treasurer sees it in the bank.</div>
+            <Link href={back} className="btn quiet">{fromWaitlist ? "Decide later" : "Hold the seat, pay later"}</Link>
           </>
         )}
-        {(confirmed || cancelled) && <Link href="/" className="btn ink">Back to the board</Link>}
+        {(confirmed || cancelled) && <Link href={back} className="btn ink">Back to {backLabel}</Link>}
       </div>
     </main>
   );

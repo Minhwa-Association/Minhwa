@@ -21,41 +21,71 @@ function withOk(path: string, ok: string): string {
   return `${path}${path.includes("?") ? "&" : "?"}ok=${ok}`;
 }
 
+function refreshSeats() {
+  revalidatePath("/");
+  revalidatePath("/me");
+  revalidatePath("/admin");
+  revalidatePath("/payments");
+}
+
+/** Book a seat → the pay page. A full session says so (the member joins the waiting list instead). */
 export async function bookSeat(formData: FormData) {
   const slotId = String(formData.get("slot_id"));
   const date = String(formData.get("date"));
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("book_seat", { p_slot_id: slotId, p_date: date });
   if (error) backWithError(`/slot/${slotId}/${date}`, error.message);
-  revalidatePath("/");
+  refreshSeats();
   redirect(`/pay/${data}`);
 }
 
+/** Cancel (or decline) a seat. The freed seat goes to the first member on the waiting list — the notice says who. */
 export async function cancelBooking(formData: FormData) {
   const id = String(formData.get("booking_id"));
-  const back = String(formData.get("back") || "/me");
+  const back = safeBack(formData, "/me");
   const supabase = await createClient();
-  const { error } = await supabase.rpc("cancel_booking", { p_booking_id: id });
+  const { data, error } = await supabase.rpc("cancel_booking", { p_booking_id: id });
   if (error) backWithError(back, error.message);
-  revalidatePath("/");
-  revalidatePath("/me");
-  revalidatePath("/admin");
-  revalidatePath("/payments");
-  redirect(withOk(back, "cancelled"));
+  refreshSeats();
+  const to = typeof data === "string" && data ? `&to=${encodeURIComponent(data)}` : "";
+  redirect(withOk(back, "cancelled") + to);
+}
+
+// ---- waiting list (v15) -------------------------------------------------------
+
+/** Full session → join the waiting list (free; the first in line gets a freed seat automatically). */
+export async function joinWaitlist(formData: FormData) {
+  const slotId = String(formData.get("slot_id"));
+  const date = String(formData.get("date"));
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("join_waitlist", { p_slot_id: slotId, p_date: date });
+  if (error) backWithError(`/slot/${slotId}/${date}`, error.message);
+  refreshSeats();
+  redirect(withOk(`/slot/${slotId}/${date}`, "waiting"));
+}
+
+/** Leave the waiting list (own entry; the admin can remove anyone). */
+export async function leaveWaitlist(formData: FormData) {
+  const id = String(formData.get("waitlist_id"));
+  const back = safeBack(formData, "/me");
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("leave_waitlist", { p_id: id });
+  if (error) backWithError(back, error.message);
+  refreshSeats();
+  redirect(withOk(back, "left"));
 }
 
 // ---- payments: member side --------------------------------------------------
 
-/** "I have paid" — the payment waits for the treasurer to see it in the bank. */
+/** "I have paid" — the payment waits for the treasurer to see it in the bank. Goes back to where the member came from. */
 export async function claimPayment(formData: FormData) {
   const paymentId = String(formData.get("payment_id"));
-  const back = String(formData.get("back") || "/me");
+  const back = safeBack(formData, "/me");
   const supabase = await createClient();
   const { error } = await supabase.rpc("claim_payment", { p_payment_id: paymentId });
   if (error) backWithError(back, error.message);
-  revalidatePath("/me");
+  refreshSeats();
   revalidatePath("/store/orders");
-  revalidatePath("/payments");
   redirect(withOk(back, back.startsWith("/store") ? "order_paid" : "paid"));
 }
 
@@ -535,7 +565,7 @@ export async function updateSettings(formData: FormData) {
     swish_payee_name: String(formData.get("swish_payee_name")),
     booking_window_weeks: Number(formData.get("booking_window_weeks")),
     cancel_deadline_days: Number(formData.get("cancel_deadline_days")),
-    max_extra_seats: Number(formData.get("max_extra_seats")),
+    // max_extra_seats: not used since v15 (full sessions take a waiting list) — left in the table, not in the form
     ...(formData.has("price_krw_per_sek") ? { price_krw_per_sek: Math.max(1, Math.round(Number(formData.get("price_krw_per_sek")) || 100)) } : {}),
   }).eq("id", 1);
   if (error) backWithError("/admin/settings", error.message);

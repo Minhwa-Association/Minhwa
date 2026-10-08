@@ -9,6 +9,7 @@ type Row = {
   slot_id: string; date: string; weekday: number; session: "day" | "evening";
   start_time: string; end_time: string; capacity: number; instructor_name: string | null;
   taken: number; seats_left: number;
+  waiting?: number;          // v15: members on the waiting list
 };
 
 export default async function BoardPage({ searchParams }: { searchParams: Promise<{ week?: string; error?: string; ok?: string }> }) {
@@ -23,14 +24,19 @@ export default async function BoardPage({ searchParams }: { searchParams: Promis
   const mondayISO = toISODate(monday);
 
   const supabase = await createClient();
-  const [{ data: rows }, { data: settings }, { data: mine }] = await Promise.all([
+  const fridayISO = toISODate(addDays(monday, 4));
+  const [{ data: rows }, { data: settings }, { data: mine }, { data: myWaiting }] = await Promise.all([
     supabase.rpc("week_board", { week_start: mondayISO }),
     supabase.from("settings").select("booking_window_weeks").eq("id", 1).single(),
     supabase.from("bookings").select("slot_id, date").eq("member_id", me.id).eq("status", "booked")
-      .gte("date", mondayISO).lte("date", toISODate(addDays(monday, 4))),
+      .gte("date", mondayISO).lte("date", fridayISO),
+    supabase.from("waitlist").select("slot_id, date").eq("member_id", me.id).eq("status", "waiting")
+      .gte("date", mondayISO).lte("date", fridayISO),
   ]);
   const board = (rows ?? []) as Row[];
   const mineSet = new Set((mine ?? []).map((b) => `${b.slot_id}|${b.date}`));
+  const waitingSet = new Set((myWaiting ?? []).map((w) => `${w.slot_id}|${w.date}`));
+  const anyExtra = board.some((r) => r.taken > r.capacity);
   const windowWeeks = settings?.booking_window_weeks ?? 2;
   const lastBookable = addDays(today, windowWeeks * 7);
 
@@ -64,7 +70,7 @@ export default async function BoardPage({ searchParams }: { searchParams: Promis
           <span><i className="swatch" style={{ background: "var(--pink-pale)", border: "1px solid var(--red-line)" }} />Almost full</span>
           <span><i className="swatch" style={{ background: "var(--red-soft)", border: "1px solid var(--red)" }} />Full</span>
           <span><i className="swatch" style={{ background: "var(--ink)" }} />Member</span>
-          <span><i className="swatch" style={{ background: "var(--ink)", border: "1.5px solid var(--red)" }} />Extra</span>
+          {anyExtra && <span><i className="swatch" style={{ background: "var(--ink)", border: "1.5px solid var(--red)" }} />Extra</span>}
         </div>
 
         <div className="board">
@@ -82,6 +88,8 @@ export default async function BoardPage({ searchParams }: { searchParams: Promis
                   const past = iso < todayISO;
                   const beyond = date > lastBookable;
                   const isMine = mineSet.has(`${r.slot_id}|${iso}`);
+                  const amWaiting = waitingSet.has(`${r.slot_id}|${iso}`);
+                  const waiting = r.waiting ?? 0;
                   const n = Math.max(r.capacity, r.taken);
                   const inner = (
                     <>
@@ -97,11 +105,12 @@ export default async function BoardPage({ searchParams }: { searchParams: Promis
                       <div style={{ fontSize: 11, opacity: 0.85 }}>
                         {r.instructor_name ? `Teacher ${r.instructor_name}` : "Teacher not set"}
                         {r.taken > r.capacity ? ` · +${r.taken - r.capacity} extra` : ""}
-                        {isMine ? " · you" : ""}
+                        {waiting > 0 ? ` · ${waiting} waiting` : ""}
+                        {isMine ? " · you" : amWaiting ? " · you (waiting)" : ""}
                       </div>
                     </>
                   );
-                  const cls = `cell ${status} ${past ? "past" : ""} ${isMine ? "mine" : ""}`;
+                  const cls = `cell ${status} ${past ? "past" : ""} ${isMine || amWaiting ? "mine" : ""}`;
                   return past || beyond
                     ? <div key={s} className={cls} aria-disabled="true">{inner}</div>
                     : <Link key={s} href={`/slot/${r.slot_id}/${iso}`} className={cls}>{inner}</Link>;
