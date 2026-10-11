@@ -2,7 +2,9 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient, currentMember } from "@/lib/supabase/server";
 import { WEEKDAYS_LONG, sessionLabel } from "@/lib/dates";
-import { addMember, setInstructor, setRoles, setSlotWhatsapp, updateSettings } from "@/app/actions";
+import { addMember, setCrewRate, setInstructor, setRoles, setSlotWhatsapp, updatePassSettings, updateSettings } from "@/app/actions";
+import { todayStockholm, parseISODate, toISODate } from "@/lib/dates";
+import { shortDay } from "@/lib/passes";
 import { ROLES, hasRole } from "@/lib/roles";
 import { Notice, TopNav } from "@/app/components";
 
@@ -15,9 +17,15 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const [{ data: settings }, { data: slots }, { data: members }] = await Promise.all([
     supabase.from("settings").select("*").eq("id", 1).single(),
     supabase.from("slots").select("id, weekday, session, instructor_id, whatsapp_url").order("weekday").order("session"),
-    supabase.from("members").select("id, name, phone, roles, auth_id").order("name"),
+    supabase.from("members").select("id, name, phone, roles, auth_id, crew_rate_until").order("name"),
   ]);
   const teachers = (members ?? []).filter((m) => hasRole(m, "teacher"));
+  const today = todayStockholm();
+  const t = parseISODate(today);
+  const in3months = toISODate(new Date(t.getFullYear(), t.getMonth() + 3, t.getDate()));
+  // Crew rate list: members with a rate first, then Crew, then everyone else
+  const rank = (m: { crew_rate_until: string | null; roles: string[] | null }) => (m.crew_rate_until && m.crew_rate_until >= today ? 0 : hasRole(m, "crew") ? 1 : 2);
+  const crewList = [...(members ?? [])].sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name));
 
   return (
     <main className="page wide">
@@ -39,6 +47,55 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           <div><label htmlFor="krw">Store price rule — won per krona <span style={{ opacity: 0.7 }}>(100 → ₩10,000 costs 100 kr; the gap to the real rate covers shipping, customs and VAT)</span></label><input id="krw" name="price_krw_per_sek" type="number" min={1} max={1000} defaultValue={settings?.price_krw_per_sek ?? 100} /></div>
           <button className="btn ink">Save settings</button>
         </form>
+
+        <form action={updatePassSettings} className="card stack" style={{ padding: 18 }}>
+          <h2>Monthly passes</h2>
+          <div className="muted small">Members pay once and book without paying. A pass works from &ldquo;I have paid&rdquo;; credits can&apos;t be used for it. Crew Unlimited is only for members with a Crew rate (below).</div>
+          <div className="row" style={{ gap: 8 }}>
+            <div className="grow"><label htmlFor="p2">Twice a week (kr)</label><input id="p2" name="pass_twice_sek" type="number" min={0} defaultValue={settings?.pass_twice_sek ?? 550} /></div>
+            <div className="grow"><label htmlFor="pu">Unlimited (kr)</label><input id="pu" name="pass_unlimited_sek" type="number" min={0} defaultValue={settings?.pass_unlimited_sek ?? 1000} /></div>
+            <div className="grow"><label htmlFor="pc">Crew Unlimited (kr)</label><input id="pc" name="pass_crew_sek" type="number" min={0} defaultValue={settings?.pass_crew_sek ?? 550} /></div>
+          </div>
+          <div className="row" style={{ gap: 8 }}>
+            <div className="grow"><label htmlFor="pw">Twice a week: sessions per week</label><input id="pw" name="pass_twice_per_week" type="number" min={1} max={10} defaultValue={settings?.pass_twice_per_week ?? 2} /></div>
+            <div className="grow"><label htmlFor="pm">Unlimited: upcoming seats at a time</label><input id="pm" name="pass_max_upcoming" type="number" min={1} max={50} defaultValue={settings?.pass_max_upcoming ?? 4} /></div>
+          </div>
+          <div className="row" style={{ gap: 8 }}>
+            <div className="grow"><label htmlFor="ps">Period starts on day</label><input id="ps" name="pass_start_day" type="number" min={1} max={28} defaultValue={settings?.pass_start_day ?? 1} /></div>
+            <div className="grow"><label htmlFor="pp">On sale days before</label><input id="pp" name="pass_presale_days" type="number" min={0} max={27} defaultValue={settings?.pass_presale_days ?? 7} /></div>
+            <div className="grow"><label htmlFor="pf">First period</label><input id="pf" name="passes_from" type="date" defaultValue={settings?.passes_from ?? "2026-11-01"} /></div>
+          </div>
+          <div className="muted small">Day 1 = calendar months (1–30 Nov). Passes already bought keep their dates if you change this.</div>
+          <button className="btn ink">Save passes</button>
+        </form>
+
+        <div className="card stack" style={{ padding: 18 }} id="crew-rate">
+          <h2>Crew rate</h2>
+          <div className="muted small">Who may buy Crew Unlimited, and until when. After the date they can&apos;t buy it again — a pass already bought runs to the end of its period. Separate from the Crew role (Calendar).</div>
+          {crewList.map((m) => {
+            const active = !!m.crew_rate_until && m.crew_rate_until >= today;
+            return (
+              <div key={m.id} className="memberrow">
+                <div className="grow" style={{ minWidth: 140 }}>
+                  <div style={{ fontWeight: 600 }}>{m.name}{hasRole(m, "crew") ? <span className="muted small"> · Crew</span> : null}</div>
+                  <div className="small" style={{ color: active ? "var(--green-text)" : "var(--muted)" }}>{active ? `Crew rate until ${shortDay(m.crew_rate_until!)}` : m.crew_rate_until ? `Ended ${shortDay(m.crew_rate_until)}` : "No Crew rate"}</div>
+                </div>
+                <form action={setCrewRate} className="row" style={{ gap: 6 }}>
+                  <input type="hidden" name="member_id" value={m.id} />
+                  <input name="crew_rate_until" type="date" defaultValue={active ? m.crew_rate_until! : in3months} className="inline" style={{ width: 150 }} aria-label={`Crew rate end date for ${m.name}`} />
+                  <button className="btn line sm">{active ? "Change" : "Give"}</button>
+                </form>
+                {active && (
+                  <form action={setCrewRate}>
+                    <input type="hidden" name="member_id" value={m.id} />
+                    <input type="hidden" name="crew_rate_until" value="" />
+                    <button className="btn quiet sm">Remove</button>
+                  </form>
+                )}
+              </div>
+            );
+          })}
+        </div>
 
         <div className="card stack" style={{ padding: 18 }}>
           <h2>Teachers per slot</h2>

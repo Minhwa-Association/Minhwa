@@ -26,7 +26,7 @@ export function paymentClass(s?: string | null): "paid" | "pending" | "" {
 export type PaymentRow = {
   id: string;
   code: string | null;
-  kind: "seat" | "material" | "membership";
+  kind: "seat" | "material" | "membership" | "pass";
   status: PaymentStatus;
   amount_sek: number;
   note: string | null;

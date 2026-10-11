@@ -5,7 +5,8 @@ import { hm, isValidISODate, longDate, parseISODate, sessionLabel, WEEKDAYS_LONG
 import { paymentClass } from "@/lib/payments";
 import { byCreated, cancelledText } from "@/lib/waitlist";
 import { bookSeat, cancelBooking, claimPayment, joinWaitlist, leaveWaitlist } from "@/app/actions";
-import { PaymentTag, Chevron, Notice } from "@/app/components";
+import { PassTag, PaymentTag, Chevron, Notice } from "@/app/components";
+import type { PassCover } from "@/lib/passes";
 
 export default async function SlotPage({ params, searchParams }: {
   params: Promise<{ slotId: string; date: string }>;
@@ -18,12 +19,14 @@ export default async function SlotPage({ params, searchParams }: {
   if (!isValidISODate(date)) notFound();
 
   const supabase = await createClient();
-  const [{ data: slot }, { data: bookings }, { data: waiting }, { data: settings }] = await Promise.all([
+  const [{ data: slot }, { data: bookings }, { data: waiting }, { data: settings }, { data: coverRow }] = await Promise.all([
     supabase.from("slots").select("id, weekday, session, start_time, end_time, capacity, instructor_id, whatsapp_url, instructor:members!slots_instructor_id_fkey(name)").eq("id", slotId).single(),
-    supabase.from("bookings").select("id, member_id, created_at, payment_id, promoted_at, member:members(name)").eq("slot_id", slotId).eq("date", date).eq("status", "booked").order("created_at"),
+    supabase.from("bookings").select("id, member_id, created_at, payment_id, pass_id, promoted_at, member:members(name)").eq("slot_id", slotId).eq("date", date).eq("status", "booked").order("created_at"),
     supabase.from("waitlist").select("id, member_id, created_at, member:members(name)").eq("slot_id", slotId).eq("date", date).eq("status", "waiting").order("created_at"),
-    supabase.from("settings").select("seat_price_sek, cancel_deadline_days").eq("id", 1).single(),
+    supabase.from("settings").select("seat_price_sek, cancel_deadline_days, pass_twice_per_week, pass_max_upcoming").eq("id", 1).single(),
+    supabase.rpc("my_pass_cover", { p_date: date }),
   ]);
+  const cover = ((coverRow as string | null) ?? "none") as PassCover;
   if (!slot) notFound();
 
   const list = bookings ?? [];
@@ -49,6 +52,11 @@ export default async function SlotPage({ params, searchParams }: {
   const rows = [...list.map((b, i) => ({ b, i })), ...Array.from({ length: left }).map((_, k) => ({ b: null, i: taken + k }))];
   const nameOf = (m: unknown) => (m as { name: string } | null)?.name ?? "Member";
   const fromWaitlistUnpaid = !!mine?.promoted_at && myPayment?.status === "pending";
+  const mineOnPass = !!mine?.pass_id && !mine?.payment_id;
+  const costText = cover === "pass" ? "with your pass" : `${price} kr`;
+  const coverNote = cover === "week_used" ? `This week's ${settings?.pass_twice_per_week ?? 2} pass sessions are used — this one is ${price} kr.`
+    : cover === "unpaid" ? `Your monthly pass isn't paid yet — this seat is ${price} kr for now and moves onto the pass once you tap “I have paid” for it.`
+    : null;
   const seatsText = left > 0 ? `${left} seat${left === 1 ? "" : "s"} left` : taken > cap ? `Full · ${taken - cap} extra` : "Full";
   const noticeText = ok === "cancelled" && to ? cancelledText(to) : undefined;
 
@@ -91,10 +99,10 @@ export default async function SlotPage({ params, searchParams }: {
         <div className="stack" style={{ gap: 8 }}>
           {rows.map(({ b, i }) =>
             b ? (
-              <div key={b.id} className={`card person ${i >= cap ? "extra" : b.member_id === me.id ? paymentClass(myPayment?.status) : ""}`}>
+              <div key={b.id} className={`card person ${i >= cap ? "extra" : b.member_id === me.id ? (mineOnPass ? "paid" : paymentClass(myPayment?.status)) : ""}`}>
                 <div className="avatar">{nameOf(b.member)[0]}</div>
                 <div style={{ fontWeight: 600 }}>{nameOf(b.member)}{b.member_id === me.id ? " (you)" : ""}</div>
-                {i >= cap ? <PaymentTag extra /> : b.member_id === me.id ? <PaymentTag status={myPayment?.status} /> : null}
+                {i >= cap ? <PaymentTag extra /> : b.member_id === me.id ? (mineOnPass ? <PassTag /> : <PaymentTag status={myPayment?.status} />) : null}
               </div>
             ) : (
               <div key={`open-${i}`} className="card dashed person"><div className="avatar ghost" /><div>Open seat</div></div>
@@ -138,18 +146,19 @@ export default async function SlotPage({ params, searchParams }: {
             <form action={cancelBooking}>
               <input type="hidden" name="booking_id" value={mine.id} />
               <input type="hidden" name="back" value={here} />
-              <button className="btn quiet">{fromWaitlistUnpaid ? "Decline this seat" : "Cancel my seat"}</button>
+              <button className="btn quiet">{fromWaitlistUnpaid || (mineOnPass && mine.promoted_at) ? "Decline this seat" : "Cancel my seat"}</button>
             </form>
+            {mineOnPass && <div className="muted small" style={{ textAlign: "center" }}>Booked with your monthly pass — nothing to pay.</div>}
             {!fromWaitlistUnpaid && <div className="muted small" style={{ textAlign: "center" }}>Free to cancel until {deadline} day{deadline === 1 ? "" : "s"} before.{queue.length > 0 ? " Your seat then goes to the waiting list." : ""}</div>}
           </>
         ) : myWait ? (
           <>
-            <div className="notice">You are #{myWaitIndex + 1} on the waiting list. When a seat frees up it is yours automatically — you then pay {price} kr as usual. Check My seats or the WhatsApp group.</div>
+            <div className="notice">You are #{myWaitIndex + 1} on the waiting list. When a seat frees up it is yours automatically — {cover === "pass" || cover === "cap" ? "covered by your pass" : `you then pay ${price} kr as usual`}. Check My seats or the WhatsApp group.</div>
             {left > 0 && myWaitIndex < left && (
               <form action={bookSeat}>
                 <input type="hidden" name="slot_id" value={slotId} />
                 <input type="hidden" name="date" value={date} />
-                <button className="btn red">A seat is open — take it · {price} kr</button>
+                <button className="btn red">A seat is open — take it · {costText}</button>
               </form>
             )}
             <form action={leaveWaitlist}>
@@ -167,16 +176,19 @@ export default async function SlotPage({ params, searchParams }: {
               <input type="hidden" name="date" value={date} />
               <button className="btn ink">Join the waiting list{queue.length > 0 ? ` · #${queue.length + 1}` : ""}</button>
             </form>
-            <div className="muted small" style={{ textAlign: "center" }}>This session is full. If someone cancels, the first in line gets the seat automatically — and pays {price} kr then. Free to leave the list.</div>
+            <div className="muted small" style={{ textAlign: "center" }}>This session is full. If someone cancels, the first in line gets the seat automatically{cover === "pass" || cover === "cap" ? " — your pass covers it" : ` — and pays ${price} kr then`}. Free to leave the list.</div>
           </>
+        ) : cover === "cap" ? (
+          <div className="notice">Your pass already holds {settings?.pass_max_upcoming ?? 4} upcoming seats. Cancel one, or book again after one has passed.</div>
         ) : (
           <>
+            {coverNote && <div className="notice">{coverNote}</div>}
             <form action={bookSeat}>
               <input type="hidden" name="slot_id" value={slotId} />
               <input type="hidden" name="date" value={date} />
-              <button className="btn red">Book this seat · {price} kr</button>
+              <button className="btn red">Book this seat · {costText}</button>
             </form>
-            <div className="muted small" style={{ textAlign: "center" }}>Swish opens right after you book</div>
+            <div className="muted small" style={{ textAlign: "center" }}>{cover === "pass" ? "Covered by your monthly pass — nothing to pay" : "Swish opens right after you book"}</div>
           </>
         )}
       </div>

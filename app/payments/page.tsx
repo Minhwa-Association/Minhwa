@@ -109,6 +109,11 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
           <Link href="/payments/credits" className="btn line sm">Open Credits</Link>
         </div>
 
+        <div className="card row between" style={{ padding: "12px 16px", flexWrap: "wrap", gap: 8 }}>
+          <div className="small"><b>Monthly passes</b><span className="muted"> · who has which pass this period · cancel or refund</span></div>
+          <Link href="/payments/passes" className="btn line sm">Open Passes</Link>
+        </div>
+
         {/* 1. paste */}
         <form action={importBank} className="card stack" style={{ padding: 18 }}>
           <h2>Paste the Nordea statement</h2>

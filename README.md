@@ -75,6 +75,16 @@ Members spend credits on any unpaid payment: the Store form ticks "Use my credit
 
 Unused credits are a debt of the association (goods and seats still owed) — shown as "Members hold" on the Credits page. Credits are pay in kind: when one person gets 1 000 kr or more in a year, employer's fees and tax reporting may apply — the page flags it; check with the accountant.
 
+## Monthly passes (v16)
+Paying per session stays (`settings.seat_price_sek`). A member can also buy a **monthly pass** (`passes`, one payment with `kind = 'pass'`, code P…, Swish message `P0412 Pass Nov Unlimited Rock`):
+- **Twice a week** (`twice`, 550 kr) — up to `pass_twice_per_week` (2) seats in a Mon–Fri week; the next one that week is the usual price. Weekly counts don't carry over.
+- **Unlimited** (`unlimited`, 1 000 kr) — any number, at most `pass_max_upcoming` (4) upcoming seats held at a time (`book_seat` says so; a seat from the waiting list is given anyway).
+- **Crew Unlimited** (`crew`, 550 kr) — the same, for members the admin gives the Crew rate (`members.crew_rate_until`, Admin → Settings → Crew rate). After that date it can't be bought again; a bought pass runs to its end.
+
+One period for everyone: from `pass_start_day` (1 → calendar months) to the day before the next; the first period is `passes_from` (2026-11-01) and the next one is on sale `pass_presale_days` (7) before it starts (`pass_offer()`). `buy_pass(kind, period_start)` makes the pass + payment (a pass not paid yet can be swapped for another kind). The pass **works from "I have paid"** (claimed); the treasurer confirms it like any payment. **Credits can't be used for a pass** (`apply_credits` refuses).
+
+A covered seat has `bookings.pass_id` and **no payment** (`payment_id` null) — shown as "Pass". `seat_create` asks `pass_covers()` first; `my_pass_cover(date)` tells the page what a booking would cost (`pass` · `week_used` · `cap` · `unpaid` · `none`). When a pass starts working, unpaid seats already booked in its period move onto it (`pass_absorb`, their 100 kr payments are cancelled). `cancel_pass`: the member only before paying; the treasurer (Payments → Passes) cancels an unpaid/claimed pass — **every seat on it goes back to 100 kr** — or refunds a paid one — **seats from today on** go back to 100 kr (send the money back with Swish). Free cancellation until the day before applies to pass seats too; a cancelled seat gives the week's count back.
+
 ## Next modules (same database)
 - Ledger: categories for every bank line (the `ledger_categories` table is the start), month close, SIE export, advance payments (paid orders not yet handed out).
 - Secretary: association mailbox, notices, financial report to members.

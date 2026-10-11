@@ -36,7 +36,51 @@ export async function bookSeat(formData: FormData) {
   const { data, error } = await supabase.rpc("book_seat", { p_slot_id: slotId, p_date: date });
   if (error) backWithError(`/slot/${slotId}/${date}`, error.message);
   refreshSeats();
+  // v16: a seat covered by the monthly pass has nothing to pay — straight back to the session
+  const { data: b } = await supabase.from("bookings").select("pass_id").eq("id", data).single();
+  if (b?.pass_id) redirect(withOk(`/slot/${slotId}/${date}`, "booked_pass"));
   redirect(`/pay/${data}`);
+}
+
+// ---- monthly passes (v16) -----------------------------------------------------
+
+/** Buy (or swap, while unpaid) a monthly pass → its pay page. */
+export async function buyPass(formData: FormData) {
+  const me = await currentMember();
+  if (!me) redirect("/login");
+  const kind = String(formData.get("kind") || "");
+  const start = String(formData.get("period_start") || "");
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("buy_pass", { p_kind: kind, p_period_start: isValidISODate(start) ? start : null });
+  if (error) backWithError(`/pass${isValidISODate(start) ? `?period=${start}` : ""}`, error.message);
+  refreshSeats();
+  redirect(`/pass/${data}`);
+}
+
+/** Cancel a pass — the member before paying; the treasurer any time (paid → refunded). */
+export async function cancelPass(formData: FormData) {
+  const me = await currentMember();
+  if (!me) redirect("/login");
+  const back = safeBack(formData, "/me");
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("cancel_pass", { p_pass_id: String(formData.get("pass_id")) });
+  if (error) backWithError(back, error.message);
+  refreshSeats();
+  revalidatePath("/payments/passes");
+  redirect(withOk(back, "pass_cancelled"));
+}
+
+/** Admin: the Crew rate for one member, with an end date (empty = no Crew rate). */
+export async function setCrewRate(formData: FormData) {
+  const me = await currentMember();
+  if (!me || !hasRole(me, "admin")) redirect("/");
+  const memberId = String(formData.get("member_id"));
+  const until = String(formData.get("crew_rate_until") || "");
+  const supabase = await createClient();
+  const { error } = await supabase.from("members").update({ crew_rate_until: isValidISODate(until) ? until : null }).eq("id", memberId);
+  if (error) backWithError("/admin/settings", error.message);
+  revalidatePath("/admin/settings");
+  redirect("/admin/settings?ok=crew_rate#crew-rate");
 }
 
 /** Cancel (or decline) a seat. The freed seat goes to the first member on the waiting list — the notice says who. */
@@ -567,6 +611,28 @@ export async function updateSettings(formData: FormData) {
     cancel_deadline_days: Number(formData.get("cancel_deadline_days")),
     // max_extra_seats: not used since v15 (full sessions take a waiting list) — left in the table, not in the form
     ...(formData.has("price_krw_per_sek") ? { price_krw_per_sek: Math.max(1, Math.round(Number(formData.get("price_krw_per_sek")) || 100)) } : {}),
+  }).eq("id", 1);
+  if (error) backWithError("/admin/settings", error.message);
+  revalidatePath("/");
+  redirect("/admin/settings?ok=saved");
+}
+
+/** Admin: monthly pass prices and rules (v16). */
+export async function updatePassSettings(formData: FormData) {
+  const me = await currentMember();
+  if (!me || !hasRole(me, "admin")) redirect("/");
+  const n = (key: string) => Math.round(Number(formData.get(key)));
+  const from = String(formData.get("passes_from") || "");
+  const supabase = await createClient();
+  const { error } = await supabase.from("settings").update({
+    pass_twice_sek: n("pass_twice_sek"),
+    pass_unlimited_sek: n("pass_unlimited_sek"),
+    pass_crew_sek: n("pass_crew_sek"),
+    pass_twice_per_week: n("pass_twice_per_week"),
+    pass_max_upcoming: n("pass_max_upcoming"),
+    pass_start_day: n("pass_start_day"),
+    pass_presale_days: n("pass_presale_days"),
+    ...(isValidISODate(from) ? { passes_from: from } : {}),
   }).eq("id", 1);
   if (error) backWithError("/admin/settings", error.message);
   revalidatePath("/");

@@ -28,6 +28,8 @@ export default async function PayPage({ params, searchParams }: { params: Promis
   ]);
 
   const slot = b.slot as unknown as { id: string; session: "day" | "evening"; start_time: string; end_time: string; capacity: number; instructor: { name: string } | null };
+  // v16: a seat on the monthly pass has nothing to pay
+  if (!b.payment) redirect(`/slot/${slot.id}/${b.date}`);
   const payment = b.payment as unknown as { id: string; code: string | null; amount_sek: number; status: string; note: string | null; credit_sek: number | null; credit_returned_sek: number | null };
   const d = parseISODate(b.date);
   const payee = settings?.swish_number ?? "";

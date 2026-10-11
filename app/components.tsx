@@ -84,6 +84,9 @@ export function Notice({ error, ok, text }: { error?: string; ok?: string; text?
   if (ok === "credits_given") return <div className="notice ok">Credits given.</div>;
   if (ok === "credits_adjusted") return <div className="notice ok">Balance corrected.</div>;
   if (ok === "credits_voided") return <div className="notice ok">Credits taken back.</div>;
+  if (ok === "booked_pass") return <div className="notice ok">Booked with your monthly pass — nothing to pay. See you there.</div>;
+  if (ok === "pass_cancelled") return <div className="notice ok">Pass cancelled.</div>;
+  if (ok === "crew_rate") return <div className="notice ok">Crew rate saved.</div>;
   return null;
 }
 
@@ -95,6 +98,11 @@ export function PaymentTag({ status, extra }: { status?: string | null; extra?: 
   if (status === "claimed") return <span className={`tag ${cls}`}>{paymentLabel(status)}</span>;
   if (status === "pending") return <span className="tag unpaid">{paymentLabel(status)}</span>;
   return null;
+}
+
+/** "Pass" pill — a seat covered by the monthly pass (nothing to pay). */
+export function PassTag() {
+  return <span className="tag paid"><Check /> Pass</span>;
 }
 
 /** "Waiting · #2" pill for a waiting-list entry. */

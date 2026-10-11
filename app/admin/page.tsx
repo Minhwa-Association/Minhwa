@@ -8,7 +8,7 @@ import { removedText } from "@/lib/waitlist";
 import { confirmPayment, cancelBooking, leaveWaitlist } from "@/app/actions";
 import { Chevron, Notice, TopNav } from "@/app/components";
 
-type Booking = { id: string; slot_id: string; date: string; member_id: string; created_at: string; promoted_at: string | null; member: { name: string } | null; payment: { id: string; code: string | null; status: string } | null };
+type Booking = { id: string; slot_id: string; date: string; member_id: string; created_at: string; promoted_at: string | null; pass_id: string | null; member: { name: string } | null; payment: { id: string; code: string | null; status: string } | null };
 type Waiting = { id: string; slot_id: string; date: string; created_at: string; member: { name: string } | null };
 type Slot = { id: string; weekday: number; session: "day" | "evening"; capacity: number; instructor: { name: string } | null };
 
@@ -25,7 +25,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const supabase = await createClient();
   const [{ data: slots }, { data: bookings }, { data: waiting }, { data: settings }] = await Promise.all([
     supabase.from("slots").select("id, weekday, session, capacity, instructor:members!slots_instructor_id_fkey(name)").order("weekday").order("session"),
-    supabase.from("bookings").select("id, slot_id, date, member_id, created_at, promoted_at, member:members(name), payment:payments(id, code, status)")
+    supabase.from("bookings").select("id, slot_id, date, member_id, created_at, promoted_at, pass_id, member:members(name), payment:payments(id, code, status)")
       .eq("status", "booked").gte("date", mondayISO).lte("date", fridayISO).order("created_at"),
     supabase.from("waitlist").select("id, slot_id, date, created_at, member:members(name)")
       .eq("status", "waiting").gte("date", mondayISO).lte("date", fridayISO).order("created_at"),
@@ -50,10 +50,11 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           <span className="bold" style={{ fontSize: 14 }}>{list.length}/{slot.capacity}</span>
         </div>
         {list.map((b, i) => {
-          const st = b.payment?.status ?? "pending";
+          const onPass = !!b.pass_id && !b.payment;
+          const st = onPass ? "confirmed" : b.payment?.status ?? "pending";
           const extra = i >= slot.capacity;
           const cls = extra ? "extra" : paymentClass(st);
-          const label = st === "confirmed" ? "✓" : st === "claimed" ? "Claimed" : "Unpaid";
+          const label = onPass ? "Pass" : st === "confirmed" ? "✓" : st === "claimed" ? "Claimed" : "Unpaid";
           return (
             <div key={b.id} className={`aperson ${cls}`} style={{ cursor: "default" }} title={[b.payment?.code, b.promoted_at ? "got the seat from the waiting list" : null].filter(Boolean).join(" · ") || undefined}>
               <span>{b.member?.name ?? "Member"}{b.promoted_at ? <small title="From the waiting list"> ↑list</small> : null}</span>
@@ -134,6 +135,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           <span><i className="swatch" style={{ background: "var(--gold)", borderRadius: 4 }} />Awaiting confirmation</span>
           <span><i className="swatch" style={{ border: "1.5px dashed var(--dash)", borderRadius: 4 }} />Open seat</span>
           <span><i className="swatch" style={{ border: "1.5px dashed var(--ink)", borderRadius: 4 }} />Waiting list</span>
+          <span>&ldquo;Pass&rdquo; = covered by a monthly pass (<Link href="/payments/passes" style={{ fontWeight: 600 }}>Passes</Link>)</span>
           <span style={{ marginLeft: "auto" }}>{settings?.seat_price_sek} kr per session · Swish {settings?.swish_number}</span>
         </div>
       </div>
