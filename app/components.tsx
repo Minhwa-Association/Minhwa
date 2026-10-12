@@ -38,6 +38,16 @@ export function TopNav({ current, me }: { current: "board" | "me" | "store" | "c
   );
 }
 
+/** In place of a list whose read failed — so a failed read never looks like "nobody". */
+export function LoadError({ what, retry }: { what: string; retry: string }) {
+  return (
+    <div className="notice err stack" role="alert" style={{ gap: 10 }}>
+      <div><b>Couldn&apos;t load {what}.</b> Please try again in a moment. If it keeps happening, tell the admin.</div>
+      <div><a href={retry} className="btn line sm" style={{ display: "inline-flex" }}>Try again</a></div>
+    </div>
+  );
+}
+
 export function Notice({ error, ok, text }: { error?: string; ok?: string; text?: string }) {
   if (error) return <div className="notice err" role="alert">{error}</div>;
   if (text) return <div className="notice ok">{text}</div>;

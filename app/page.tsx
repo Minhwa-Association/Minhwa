@@ -3,7 +3,8 @@ import { redirect } from "next/navigation";
 import { createClient, currentMember } from "@/lib/supabase/server";
 
 import { addDays, isValidISODate, mondayOf, parseISODate, shortDate, toISODate, weekLabel, WEEKDAYS } from "@/lib/dates";
-import { Chevron, Notice, TopNav } from "@/app/components";
+import { Chevron, LoadError, Notice, TopNav } from "@/app/components";
+import { loadFailed } from "@/lib/loadError";
 
 type Row = {
   slot_id: string; date: string; weekday: number; session: "day" | "evening";
@@ -25,7 +26,7 @@ export default async function BoardPage({ searchParams }: { searchParams: Promis
 
   const supabase = await createClient();
   const fridayISO = toISODate(addDays(monday, 4));
-  const [{ data: rows }, { data: settings }, { data: mine }, { data: myWaiting }] = await Promise.all([
+  const [{ data: rows, error: rowsErr }, { data: settings }, { data: mine, error: mineErr }, { data: myWaiting, error: myWaitErr }] = await Promise.all([
     supabase.rpc("week_board", { week_start: mondayISO }),
     supabase.from("settings").select("booking_window_weeks").eq("id", 1).single(),
     supabase.from("bookings").select("slot_id, date").eq("member_id", me.id).eq("status", "booked")
@@ -33,6 +34,7 @@ export default async function BoardPage({ searchParams }: { searchParams: Promis
     supabase.from("waitlist").select("slot_id, date").eq("member_id", me.id).eq("status", "waiting")
       .gte("date", mondayISO).lte("date", fridayISO),
   ]);
+  const failed = loadFailed("board", { week_board: rowsErr, my_bookings: mineErr, my_waitlist: myWaitErr });
   const board = (rows ?? []) as Row[];
   const mineSet = new Set((mine ?? []).map((b) => `${b.slot_id}|${b.date}`));
   const waitingSet = new Set((myWaiting ?? []).map((w) => `${w.slot_id}|${w.date}`));
@@ -65,6 +67,7 @@ export default async function BoardPage({ searchParams }: { searchParams: Promis
           <Link className="iconbtn" href={`/?week=${toISODate(addDays(monday, 7))}`} aria-label="Next week"><Chevron dir="right" /></Link>
         </div>
 
+        {failed ? <LoadError what="the board" retry={`/?week=${mondayISO}`} /> : (<>
         <div className="legend">
           <span><i className="swatch" style={{ background: "var(--green)", border: "1px solid var(--green-line)" }} />Open</span>
           <span><i className="swatch" style={{ background: "var(--pink-pale)", border: "1px solid var(--red-line)" }} />Almost full</span>
@@ -119,6 +122,7 @@ export default async function BoardPage({ searchParams }: { searchParams: Promis
             );
           })}
         </div>
+        </>)}
         {monday > lastBookable && <div className="notice">Bookings open {windowWeeks} weeks ahead. This week isn&apos;t open yet.</div>}
       </div>
     </main>

@@ -5,7 +5,8 @@ import { hm, isValidISODate, longDate, parseISODate, sessionLabel, WEEKDAYS_LONG
 import { paymentClass } from "@/lib/payments";
 import { byCreated, cancelledText } from "@/lib/waitlist";
 import { bookSeat, cancelBooking, claimPayment, joinWaitlist, leaveWaitlist } from "@/app/actions";
-import { PassTag, PaymentTag, Chevron, Notice } from "@/app/components";
+import { PassTag, PaymentTag, Chevron, Notice, LoadError } from "@/app/components";
+import { loadFailed } from "@/lib/loadError";
 import type { PassCover } from "@/lib/passes";
 
 export default async function SlotPage({ params, searchParams }: {
@@ -19,13 +20,28 @@ export default async function SlotPage({ params, searchParams }: {
   if (!isValidISODate(date)) notFound();
 
   const supabase = await createClient();
-  const [{ data: slot }, { data: bookings }, { data: waiting }, { data: settings }, { data: coverRow }] = await Promise.all([
+  const [{ data: slot, error: slotErr }, { data: bookings, error: bookingsErr }, { data: waiting, error: waitErr }, { data: settings }, { data: coverRow, error: coverErr }] = await Promise.all([
     supabase.from("slots").select("id, weekday, session, start_time, end_time, capacity, instructor_id, whatsapp_url, instructor:members!slots_instructor_id_fkey(name)").eq("id", slotId).single(),
     supabase.from("bookings").select("id, member_id, created_at, payment_id, pass_id, promoted_at, member:members(name)").eq("slot_id", slotId).eq("date", date).eq("status", "booked").order("created_at"),
     supabase.from("waitlist").select("id, member_id, created_at, member:members(name)").eq("slot_id", slotId).eq("date", date).eq("status", "waiting").order("created_at"),
     supabase.from("settings").select("seat_price_sek, cancel_deadline_days, pass_twice_per_week, pass_max_upcoming").eq("id", 1).single(),
     supabase.rpc("my_pass_cover", { p_date: date }),
   ]);
+  // a failed read must not look like "nobody booked" (PGRST116 = no such slot → 404 below)
+  if (loadFailed("slot", { slot: slotErr?.code === "PGRST116" ? null : slotErr, bookings: bookingsErr, waitlist: waitErr, pass_cover: coverErr })) {
+    return (
+      <main className="page">
+        <div style={{ paddingTop: 20 }} className="stack">
+          <Link href="/" className="row muted" style={{ minHeight: 44, fontWeight: 500 }}><Chevron dir="left" /> Weekly board</Link>
+          <div>
+            <h1 style={{ fontSize: 32 }}>{slot ? `${WEEKDAYS_LONG[slot.weekday - 1]} · ${sessionLabel(slot.session)}` : "Session"}</h1>
+            <div className="muted">{longDate(parseISODate(date))}</div>
+          </div>
+          <LoadError what="the seats" retry={`/slot/${slotId}/${date}`} />
+        </div>
+      </main>
+    );
+  }
   const cover = ((coverRow as string | null) ?? "none") as PassCover;
   if (!slot) notFound();
 

@@ -7,7 +7,8 @@ import { paymentClass } from "@/lib/payments";
 import { todayStockholm, addDays, mondayOf } from "@/lib/dates";
 import { cancelledText, waitPosition, type WaitRow } from "@/lib/waitlist";
 import { cancelBooking, claimPayment, leaveWaitlist } from "@/app/actions";
-import { PassTag, PaymentTag, Notice, TopNav, WaitTag } from "@/app/components";
+import { LoadError, PassTag, PaymentTag, Notice, TopNav, WaitTag } from "@/app/components";
+import { loadFailed } from "@/lib/loadError";
 import { daysBetween, PASS_REMIND_DAYS, passWorks, periodName, shortDay, type PassOffer, type PassRow } from "@/lib/passes";
 import { paymentLabel } from "@/lib/payments";
 import { credits, type CreditBalance } from "@/lib/credits";
@@ -18,7 +19,7 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
   const { error, ok, to, pass: fromPass } = await searchParams;
   const supabase = await createClient();
   const todayISO = todayStockholm();
-  const [{ data: bookings }, { data: waitingRows }, { data: settings }, { data: creditRow }, { data: passRows }, { data: offerRows }] = await Promise.all([
+  const [{ data: bookings, error: bookingsErr }, { data: waitingRows, error: waitErr }, { data: settings }, { data: creditRow }, { data: passRows, error: passErr }, { data: offerRows, error: offerErr }] = await Promise.all([
     supabase.from("bookings")
       .select("id, date, status, promoted_at, pass_id, slot:slots(id, session, start_time, end_time), payment:payments(id, code, amount_sek, status)")
       .eq("member_id", me.id).eq("status", "booked").gte("date", todayISO).order("date"),
@@ -43,9 +44,21 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
   const weekMonday = weekend ? addDays(mondayOf(todayDate), 7) : mondayOf(todayDate);
   const weekStart = toISODate(weekMonday);
   const weekEnd = toISODate(addDays(weekMonday, 6));
-  const { data: weekRows } = curPass
+  const { data: weekRows, error: weekErr } = curPass
     ? await supabase.from("bookings").select("id").eq("pass_id", curPass.id).eq("status", "booked").gte("date", weekStart).lte("date", weekEnd)
-    : { data: [] };
+    : { data: [], error: null };
+  // a failed read must not look like "no upcoming seats"
+  if (loadFailed("me", { bookings: bookingsErr, waitlist: waitErr, passes: passErr, pass_offer: offerErr, pass_week: weekErr })) {
+    return (
+      <main className="page">
+        <div className="topbar">
+          <div><h1>My seats</h1><div className="muted small">{me.name} · {roleLabels(me.roles)}</div></div>
+          <TopNav current="me" me={me} />
+        </div>
+        <LoadError what="your seats" retry="/me" />
+      </main>
+    );
+  }
   const weekUsed = (weekRows ?? []).length;
   const perWeek = settings?.pass_twice_per_week ?? 2;
   const maxUpcoming = settings?.pass_max_upcoming ?? 4;

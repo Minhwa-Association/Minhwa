@@ -6,7 +6,8 @@ import { addDays, isValidISODate, mondayOf, parseISODate, shortDate, toISODate, 
 import { paymentClass } from "@/lib/payments";
 import { removedText } from "@/lib/waitlist";
 import { confirmPayment, cancelBooking, leaveWaitlist } from "@/app/actions";
-import { Chevron, Notice, TopNav } from "@/app/components";
+import { Chevron, LoadError, Notice, TopNav } from "@/app/components";
+import { loadFailed } from "@/lib/loadError";
 
 type Booking = { id: string; slot_id: string; date: string; member_id: string; created_at: string; promoted_at: string | null; pass_id: string | null; member: { name: string } | null; payment: { id: string; code: string | null; status: string } | null };
 type Waiting = { id: string; slot_id: string; date: string; created_at: string; member: { name: string } | null };
@@ -23,7 +24,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const back = `/admin?week=${mondayISO}`;
 
   const supabase = await createClient();
-  const [{ data: slots }, { data: bookings }, { data: waiting }, { data: settings }] = await Promise.all([
+  const [{ data: slots, error: slotsErr }, { data: bookings, error: bookingsErr }, { data: waiting, error: waitErr }, { data: settings }] = await Promise.all([
     supabase.from("slots").select("id, weekday, session, capacity, instructor:members!slots_instructor_id_fkey(name)").order("weekday").order("session"),
     supabase.from("bookings").select("id, slot_id, date, member_id, created_at, promoted_at, pass_id, member:members(name), payment:payments(id, code, status)")
       .eq("status", "booked").gte("date", mondayISO).lte("date", fridayISO).order("created_at"),
@@ -31,6 +32,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
       .eq("status", "waiting").gte("date", mondayISO).lte("date", fridayISO).order("created_at"),
     supabase.from("settings").select("seat_price_sek, swish_number").eq("id", 1).single(),
   ]);
+  const failed = loadFailed("admin", { slots: slotsErr, bookings: bookingsErr, waitlist: waitErr });
   const S = (slots ?? []) as unknown as Slot[];
   const B = (bookings ?? []) as unknown as Booking[];
   const W = (waiting ?? []) as unknown as Waiting[];
@@ -119,6 +121,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           </div>
         </div>
 
+        {failed ? <LoadError what="the board" retry={back} /> : (
         <div className="admingrid">
           <div />
           {WEEKDAYS_LONG.map((d, i) => (
@@ -129,6 +132,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           <div className="rowlabel"><div className="bold">Evening</div><div className="muted small">17:00 – 20:00</div></div>
           {[1, 2, 3, 4, 5].map((w) => cell(w, "evening") ?? <div key={`e${w}`} />)}
         </div>
+        )}
 
         <div className="legend">
           <span><i className="swatch" style={{ background: "var(--green)", borderRadius: 4 }} />Paid (confirmed)</span>
