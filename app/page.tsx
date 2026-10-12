@@ -87,34 +87,39 @@ export default async function BoardPage({ searchParams }: { searchParams: Promis
                 {(["day", "evening"] as const).map((s) => {
                   const r = cells.find((c) => c.session === s);
                   if (!r) return <div key={s} className="cell" />;
-                  const status = r.taken >= r.capacity ? "full" : r.taken >= 3 ? "almost" : "";
+                  // no teacher = closed (v16.1): 0/0, no dots, can't be opened
+                  const closed = !r.instructor_name;
+                  const cap = closed ? 0 : r.capacity;
+                  const status = closed ? "closed" : r.taken >= r.capacity ? "full" : r.capacity - r.taken <= 2 ? "almost" : "";
                   const past = iso < todayISO;
                   const beyond = date > lastBookable;
                   const isMine = mineSet.has(`${r.slot_id}|${iso}`);
                   const amWaiting = waitingSet.has(`${r.slot_id}|${iso}`);
                   const waiting = r.waiting ?? 0;
-                  const n = Math.max(r.capacity, r.taken);
+                  const n = closed ? 0 : Math.max(r.capacity, r.taken);
                   const inner = (
                     <>
                       <div className="row between" style={{ alignItems: "baseline" }}>
                         <span style={{ fontSize: 13, fontWeight: 700 }}>{s === "day" ? "Day" : "Evening"} <span style={{ fontWeight: 500, fontSize: 11, opacity: 0.8 }}>{r.start_time.slice(0, 2)}–{r.end_time.slice(0, 2)}</span></span>
-                        <span style={{ fontSize: 15, fontWeight: 700 }}>{r.taken}/{r.capacity}</span>
+                        <span style={{ fontSize: 15, fontWeight: 700 }}>{r.taken}/{cap}</span>
                       </div>
-                      <div className="dots" aria-label={`${r.taken} of ${r.capacity} seats taken`}>
-                        {Array.from({ length: n }).map((_, k) => (
-                          <i key={k} className={`dot ${k >= r.capacity ? "extra" : k < r.taken ? "on" : ""}`} />
-                        ))}
-                      </div>
+                      {n > 0 && (
+                        <div className="dots" aria-label={`${r.taken} of ${r.capacity} seats taken`}>
+                          {Array.from({ length: n }).map((_, k) => (
+                            <i key={k} className={`dot ${k >= r.capacity ? "extra" : k < r.taken ? "on" : ""}`} />
+                          ))}
+                        </div>
+                      )}
                       <div style={{ fontSize: 11, opacity: 0.85 }}>
                         {r.instructor_name ? `Teacher ${r.instructor_name}` : "Teacher not set"}
-                        {r.taken > r.capacity ? ` · +${r.taken - r.capacity} extra` : ""}
+                        {!closed && r.taken > r.capacity ? ` · +${r.taken - r.capacity} extra` : ""}
                         {waiting > 0 ? ` · ${waiting} waiting` : ""}
                         {isMine ? " · you" : amWaiting ? " · you (waiting)" : ""}
                       </div>
                     </>
                   );
                   const cls = `cell ${status} ${past ? "past" : ""} ${isMine || amWaiting ? "mine" : ""}`;
-                  return past || beyond
+                  return past || beyond || closed
                     ? <div key={s} className={cls} aria-disabled="true">{inner}</div>
                     : <Link key={s} href={`/slot/${r.slot_id}/${iso}`} className={cls}>{inner}</Link>;
                 })}

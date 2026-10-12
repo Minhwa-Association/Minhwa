@@ -44,17 +44,19 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     const date = toISODate(addDays(monday, weekday - 1));
     const list = B.filter((b) => b.slot_id === slot.id && b.date === date);
     const queue = W.filter((w) => w.slot_id === slot.id && w.date === date);
-    const full = list.length >= slot.capacity;
+    const closed = !slot.instructor;                 // v16.1: no teacher = not open for booking (0/0)
+    const cap = closed ? 0 : slot.capacity;
+    const full = !closed && list.length >= slot.capacity;
     return (
-      <div className={`acell ${full ? "full" : ""}`} key={slot.id + date}>
+      <div className={`acell ${full ? "full" : closed ? "closed" : ""}`} key={slot.id + date}>
         <div className="row between" style={{ alignItems: "baseline" }}>
           <span className="muted small">{slot.instructor?.name ? `Teacher ${slot.instructor.name}` : "No teacher"}</span>
-          <span className="bold" style={{ fontSize: 14 }}>{list.length}/{slot.capacity}</span>
+          <span className="bold" style={{ fontSize: 14 }}>{list.length}/{cap}</span>
         </div>
         {list.map((b, i) => {
           const onPass = !!b.pass_id && !b.payment;
           const st = onPass ? "confirmed" : b.payment?.status ?? "pending";
-          const extra = i >= slot.capacity;
+          const extra = !closed && i >= slot.capacity;
           const cls = extra ? "extra" : paymentClass(st);
           const label = onPass ? "Pass" : st === "confirmed" ? "✓" : st === "claimed" ? "Claimed" : "Unpaid";
           return (
@@ -78,7 +80,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
             </div>
           );
         })}
-        {Array.from({ length: Math.max(0, slot.capacity - list.length) }).map((_, k) => (
+        {Array.from({ length: Math.max(0, cap - list.length) }).map((_, k) => (
           <div key={k} className="aperson empty"><span>Open seat</span></div>
         ))}
         {queue.length > 0 && (

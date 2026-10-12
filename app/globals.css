@@ -76,6 +76,8 @@ h2 { font-size: 22px; }
 .cell.almost { background: var(--pink-pale); border-color: var(--red-line); }
 .cell.full { background: var(--red-soft); border-color: var(--red); }
 .cell.past { opacity: 0.45; }
+.cell.closed { background: transparent; border: 1.5px dashed var(--dash); color: var(--muted); }
+.acell.closed { background: transparent; border: 1.5px dashed var(--dash); }
 .cell.mine { outline: 2px solid var(--ink); outline-offset: 1px; }
 .dots { display: flex; gap: 5px; flex-wrap: wrap; }
 .dot { width: 14px; height: 14px; border-radius: 50%; display: inline-block; background: transparent; border: 1.5px solid #8f9460; }

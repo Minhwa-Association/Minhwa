@@ -57,7 +57,9 @@ export default async function SlotPage({ params, searchParams }: {
   }
   const d = parseISODate(date);
   const taken = list.length;
-  const cap = slot.capacity;
+  const closed = !slot.instructor_id;              // v16.1: no teacher = not open for booking
+  const cap = closed ? 0 : slot.capacity;
+  const extraFrom = closed ? Infinity : cap;      // seats kept from before the teacher was taken off aren't "extra"
   const left = Math.max(0, cap - taken);
   const full = taken >= cap;
   const price = settings?.seat_price_sek ?? 100;
@@ -73,7 +75,7 @@ export default async function SlotPage({ params, searchParams }: {
   const coverNote = cover === "week_used" ? `This week's ${settings?.pass_twice_per_week ?? 2} pass sessions are used — this one is ${price} kr.`
     : cover === "unpaid" ? `Your monthly pass isn't paid yet — this seat is ${price} kr for now and moves onto the pass once you tap “I have paid” for it.`
     : null;
-  const seatsText = left > 0 ? `${left} seat${left === 1 ? "" : "s"} left` : taken > cap ? `Full · ${taken - cap} extra` : "Full";
+  const seatsText = closed ? "Not open — no teacher yet" : left > 0 ? `${left} seat${left === 1 ? "" : "s"} left` : taken > cap ? `Full · ${taken - cap} extra` : "Full";
   const noticeText = ok === "cancelled" && to ? cancelledText(to) : undefined;
 
   return (
@@ -102,23 +104,23 @@ export default async function SlotPage({ params, searchParams }: {
 
         <div>
           <div className="row between"><span className="bold">Seats {taken} / {cap}</span><span className="muted small">{seatsText}{queue.length > 0 ? ` · ${queue.length} waiting` : ""}</span></div>
-          <div className="progress" style={{ marginTop: 6 }}><div style={{ width: `${Math.min(100, (taken / cap) * 100)}%` }} /></div>
+          {!closed && <div className="progress" style={{ marginTop: 6 }}><div style={{ width: `${Math.min(100, (taken / cap) * 100)}%` }} /></div>}
         </div>
 
-        <div className="row between">
+        {(!closed || list.length > 0) && <div className="row between">
           <div className="muted small">Who&apos;s coming</div>
           <div className="legend" style={{ gap: 10 }}>
             <span><i className="swatch" style={{ background: "var(--green)", borderRadius: 3 }} />Paid</span>
             <span><i className="swatch" style={{ background: "var(--gold)", borderRadius: 3 }} />Awaiting confirmation</span>
           </div>
-        </div>
+        </div>}
         <div className="stack" style={{ gap: 8 }}>
           {rows.map(({ b, i }) =>
             b ? (
-              <div key={b.id} className={`card person ${i >= cap ? "extra" : b.member_id === me.id ? (mineOnPass ? "paid" : paymentClass(myPayment?.status)) : ""}`}>
+              <div key={b.id} className={`card person ${i >= extraFrom ? "extra" : b.member_id === me.id ? (mineOnPass ? "paid" : paymentClass(myPayment?.status)) : ""}`}>
                 <div className="avatar">{nameOf(b.member)[0]}</div>
                 <div style={{ fontWeight: 600 }}>{nameOf(b.member)}{b.member_id === me.id ? " (you)" : ""}</div>
-                {i >= cap ? <PaymentTag extra /> : b.member_id === me.id ? (mineOnPass ? <PassTag /> : <PaymentTag status={myPayment?.status} />) : null}
+                {i >= extraFrom ? <PaymentTag extra /> : b.member_id === me.id ? (mineOnPass ? <PassTag /> : <PaymentTag status={myPayment?.status} />) : null}
               </div>
             ) : (
               <div key={`open-${i}`} className="card dashed person"><div className="avatar ghost" /><div>Open seat</div></div>
@@ -126,7 +128,7 @@ export default async function SlotPage({ params, searchParams }: {
           )}
         </div>
 
-        {(queue.length > 0 || (full && !mine && !iTeachThis)) && (
+        {(queue.length > 0 || (!closed && full && !mine && !iTeachThis)) && (
           <>
             <div className="row between" style={{ marginTop: 4 }}>
               <div className="muted small">Waiting list{queue.length > 0 ? ` · ${queue.length}` : ""}</div>
@@ -185,6 +187,8 @@ export default async function SlotPage({ params, searchParams }: {
           </>
         ) : iTeachThis ? (
           <div className="notice">You&apos;re the teacher for this session — no seat needed.</div>
+        ) : closed ? (
+          <div className="notice">This session has no teacher yet, so it isn&apos;t open for booking.</div>
         ) : full ? (
           <>
             <form action={joinWaitlist}>
