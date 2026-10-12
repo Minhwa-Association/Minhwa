@@ -11,12 +11,12 @@ import type { PassCover } from "@/lib/passes";
 
 export default async function SlotPage({ params, searchParams }: {
   params: Promise<{ slotId: string; date: string }>;
-  searchParams: Promise<{ error?: string; ok?: string; to?: string }>;
+  searchParams: Promise<{ error?: string; ok?: string; to?: string; cr?: string; later?: string }>;
 }) {
   const me = await currentMember();
   if (!me) redirect("/login");
   const { slotId, date } = await params;
-  const { error, ok, to } = await searchParams;
+  const { error, ok, to, cr, later } = await searchParams;
   if (!isValidISODate(date)) notFound();
 
   const supabase = await createClient();
@@ -76,7 +76,7 @@ export default async function SlotPage({ params, searchParams }: {
     : cover === "unpaid" ? `Your monthly pass isn't paid yet — this seat is ${price} kr for now and moves onto the pass once you tap “I have paid” for it.`
     : null;
   const seatsText = closed ? "Not open — no teacher yet" : left > 0 ? `${left} seat${left === 1 ? "" : "s"} left` : taken > cap ? `Full · ${taken - cap} extra` : "Full";
-  const noticeText = ok === "cancelled" && to ? cancelledText(to) : undefined;
+  const noticeText = ok === "cancelled" ? cancelledText(to, cr, later) : undefined;
 
   return (
     <main className="page">
@@ -167,7 +167,7 @@ export default async function SlotPage({ params, searchParams }: {
               <button className="btn quiet">{fromWaitlistUnpaid || (mineOnPass && mine.promoted_at) ? "Decline this seat" : "Cancel my seat"}</button>
             </form>
             {mineOnPass && <div className="muted small" style={{ textAlign: "center" }}>Booked with your monthly pass — nothing to pay.</div>}
-            {!fromWaitlistUnpaid && <div className="muted small" style={{ textAlign: "center" }}>Free to cancel until {deadline} day{deadline === 1 ? "" : "s"} before.{queue.length > 0 ? " Your seat then goes to the waiting list." : ""}</div>}
+            {!fromWaitlistUnpaid && <div className="muted small" style={{ textAlign: "center" }}>Free to cancel until {deadline} day{deadline === 1 ? "" : "s"} before{mineOnPass ? "" : " — what you paid comes back as credits"}.{queue.length > 0 ? " Your seat then goes to the waiting list." : ""}</div>}
           </>
         ) : myWait ? (
           <>

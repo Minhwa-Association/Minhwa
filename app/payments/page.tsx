@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient, currentMember } from "@/lib/supabase/server";
 import { canUsePayments } from "@/lib/roles";
 import { shortDate } from "@/lib/dates";
-import { attachTransaction, confirmMatched, confirmPayment, ignoreTransaction, importBank, rejectMatch, restoreTransaction, undoConfirmation } from "@/app/actions";
+import { attachTransaction, confirmMatched, confirmPayment, dropClaimedPayment, ignoreTransaction, importBank, rejectMatch, restoreTransaction, undoConfirmation } from "@/app/actions";
 import { Notice, TopNav } from "@/app/components";
 import { bankDate, bankWho, describePayment, kr, paymentLabel, type BankTx, type PaymentRow } from "@/lib/payments";
 import { credits } from "@/lib/credits";
@@ -11,6 +11,7 @@ import { credits } from "@/lib/credits";
 type Q = { error?: string; ok?: string; added?: string; dup?: string; matched?: string; sugg?: string; skipped?: string; n?: string; show?: string };
 
 const TX_SELECT = "id, booked_on, amount_sek, title, counterparty, message, own_notes, balance_sek, status, payment_id, imported_at, payment:payments!bank_transactions_payment_id_fkey(id, code, note, amount_sek, status, kind, member:members(name))";
+const CREDITS_NOTE = "seat cancelled — confirming gives the member credits";
 
 const PLACEHOLDER = [
   "Bokföringsdag,Belopp,Avsändare,Mottagare,Namn,Ytterligare detaljer,Meddelande,Egna anteckningar,Saldo,Valuta",
@@ -55,7 +56,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   const showOther = q.show === "other";
 
   const supabase = await createClient();
-  const [{ data: matchedRows }, { data: waitingRows }, { data: openRows }, { data: claimedRows }, { data: confirmedRows }, { count: nOut }, { count: nIgn }, otherRes, { count: nClaims }, { count: nToPay }, { data: creditRows }] = await Promise.all([
+  const [{ data: matchedRows }, { data: waitingRows }, { data: openRows }, { data: claimedRows }, { data: confirmedRows }, { count: nOut }, { count: nIgn }, otherRes, { count: nClaims }, { count: nToPay }, { data: creditRows }, { data: cancelledSeatRows }] = await Promise.all([
     supabase.from("bank_transactions").select(TX_SELECT).in("status", ["matched", "suggested"]).order("booked_on", { ascending: false }).order("imported_at", { ascending: false }),
     supabase.from("bank_transactions").select(TX_SELECT).eq("status", "unmatched").gt("amount_sek", 0).order("booked_on", { ascending: false }).order("imported_at", { ascending: false }),
     supabase.from("payments_view").select("*").in("status", ["pending", "claimed"]).is("bank_tx_id", null).order("member_name").order("created_at"),
@@ -69,6 +70,9 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
     supabase.from("expense_claims").select("id", { count: "exact", head: true }).eq("status", "new"),
     supabase.from("expense_claims").select("id", { count: "exact", head: true }).eq("status", "approved"),
     supabase.from("credit_balances").select("balance"),
+    // v16.2: seats cancelled before the money was seen — a bank line can still belong to one (→ credits)
+    supabase.from("payments_view").select("*").eq("kind", "seat").eq("status", "cancelled").eq("booking_status", "cancelled")
+      .is("bank_tx_id", null).gte("created_at", new Date(Date.now() - 60 * 86400000).toISOString()).order("created_at", { ascending: false }).limit(100),
   ]);
   const creditBalances = (creditRows ?? []) as { balance: number }[];
   const creditsOwed = creditBalances.reduce((s, b) => s + Number(b.balance), 0);
@@ -78,6 +82,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   const open = (openRows ?? []) as PaymentRow[];
   const claimed = (claimedRows ?? []) as PaymentRow[];
   const confirmed = (confirmedRows ?? []) as PaymentRow[];
+  const cancelledSeats = (cancelledSeatRows ?? []) as PaymentRow[];
   const other = ((otherRes as { data: BankTx[] | null }).data ?? []) as BankTx[];
   const pendingOnly = open.filter((p) => p.status === "pending");
   const byCode = matched.filter((t) => t.status === "matched").length;
@@ -151,6 +156,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
                       <span className="muted"> · {t.payment.note && t.payment.code && t.payment.note.startsWith(t.payment.code) ? t.payment.note.slice(t.payment.code.length).trim() : t.payment.note}</span>
                       {t.payment.code && <> <span className="tag code">{t.payment.code}</span></>}
                       <span className={`tag ${t.status === "matched" ? "paid" : "pending"}`} style={{ marginLeft: 6 }}>{t.status === "matched" ? "code match" : "suggested"}</span>
+                      {t.payment.status === "cancelled" && <div className="muted small">{CREDITS_NOTE}</div>}
                     </>
                   ) : <span className="muted">payment missing</span>}
                 </div>
@@ -180,13 +186,19 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
           {claimed.map((p) => (
             <div key={p.id} className="txrow">
               <div className="muted small">{p.claimed_at ? shortDate(new Date(p.claimed_at)) : "—"}</div>
-              <div style={{ minWidth: 0 }}><PayLine p={p} /></div>
+              <div style={{ minWidth: 0 }}><PayLine p={p} />{p.booking_status === "cancelled" && <div className="muted small">{CREDITS_NOTE}</div>}</div>
               <div className="amt">{kr(p.amount_sek)}</div>
               <div className="actions">
                 <form action={confirmPayment}>
                   <input type="hidden" name="payment_id" value={p.id} />
                   <button className="btn line sm">Confirm without bank line</button>
                 </form>
+                {p.booking_status === "cancelled" && (
+                  <form action={dropClaimedPayment}>
+                    <input type="hidden" name="payment_id" value={p.id} />
+                    <button className="btn quiet sm" title="The seat was cancelled and the money never came">Never came</button>
+                  </form>
+                )}
               </div>
             </div>
           ))}
@@ -222,6 +234,11 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
                       {others.length > 0 && (
                         <optgroup label="Other open payments">
                           {others.map((p) => <option key={p.id} value={p.id}>{p.member_name} · {describePayment(p)} · {kr(p.amount_sek)} · {p.code}</option>)}
+                        </optgroup>
+                      )}
+                      {cancelledSeats.length > 0 && (
+                        <optgroup label="Cancelled seats — the money becomes credits">
+                          {cancelledSeats.map((p) => <option key={p.id} value={p.id}>{p.member_name} · {describePayment(p)} · {kr(p.amount_sek)} · {p.code}</option>)}
                         </optgroup>
                       )}
                     </select>
@@ -268,7 +285,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
                 <div className="muted small">{p.confirmed_at ? shortDate(new Date(p.confirmed_at)) : "—"}</div>
                 <div style={{ minWidth: 0 }}>
                   <PayLine p={p} />
-                  <div className="muted small">{p.bank_date ? `bank ${bankDate(p.bank_date)} · ${p.bank_name ?? ""}` : Number(p.amount_sek) === 0 && Number(p.credit_sek ?? 0) > 0 ? "paid with credits" : "confirmed without a bank line"}</div>
+                  <div className="muted small">{p.bank_date ? `bank ${bankDate(p.bank_date)} · ${p.bank_name ?? ""}` : Number(p.amount_sek) === 0 && Number(p.credit_sek ?? 0) > 0 ? "paid with credits" : "confirmed without a bank line"}{Number(p.credited_sek ?? 0) > 0 ? ` · seat cancelled — ${credits(Number(p.credited_sek))} back to the member` : ""}</div>
                 </div>
                 <div className="amt">{kr(p.amount_sek)}</div>
                 <div className="actions">

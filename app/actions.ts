@@ -92,7 +92,12 @@ export async function cancelBooking(formData: FormData) {
   if (error) backWithError(back, error.message);
   refreshSeats();
   const to = typeof data === "string" && data ? `&to=${encodeURIComponent(data)}` : "";
-  redirect(withOk(back, "cancelled") + to);
+  // v16.2: what came back as credits now, and what will when the treasurer sees the money ("I have paid")
+  const { data: b } = await supabase.from("bookings").select("payment:payments(status, amount_sek, credit_sek, credited_sek)").eq("id", id).maybeSingle();
+  const p = (b?.payment ?? null) as unknown as { status: string; amount_sek: number; credit_sek: number; credited_sek: number } | null;
+  const cr = p ? Number(p.credit_sek ?? 0) + Number(p.credited_sek ?? 0) : 0;
+  const later = p?.status === "claimed" ? Number(p.amount_sek ?? 0) : 0;
+  redirect(withOk(back, "cancelled") + to + (cr > 0 ? `&cr=${cr}` : "") + (later > 0 ? `&later=${later}` : ""));
 }
 
 // ---- waiting list (v15) -------------------------------------------------------
@@ -160,6 +165,17 @@ export async function confirmPayment(formData: FormData) {
   if (error) backWithError(back, error.message);
   refreshPayments();
   redirect(withOk(back, "confirmed"));
+}
+
+/** v16.2: "Never came" — a claimed payment of a cancelled seat whose money did not arrive → cancelled. */
+export async function dropClaimedPayment(formData: FormData) {
+  await treasurer();
+  const paymentId = String(formData.get("payment_id"));
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("drop_claimed_payment", { p_payment_id: paymentId });
+  if (error) backWithError("/payments", error.message);
+  refreshPayments();
+  redirect("/payments?ok=never_came");
 }
 
 /** Confirm every bank line that was matched by its payment code. */

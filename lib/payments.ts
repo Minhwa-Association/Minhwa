@@ -48,6 +48,7 @@ export type PaymentRow = {
   items_summary?: string | null;     // v9: "2× Barim brush · S · 백산, 1× Hanji, lacquered"
   credit_sek?: number | null;        // v14: part paid with credits (amount_sek is the Swish part)
   credit_returned_sek?: number | null;
+  credited_sek?: number | null;       // v16.2: Swish part given back as credits (seat cancelled after paying)
 };
 
 /** "05/10 Mon Day" for a seat · "Store · 2× Barim brush…" for an order · otherwise the Swish message without its code */

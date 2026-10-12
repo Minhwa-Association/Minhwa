@@ -13,11 +13,11 @@ type Booking = { id: string; slot_id: string; date: string; member_id: string; c
 type Waiting = { id: string; slot_id: string; date: string; created_at: string; member: { name: string } | null };
 type Slot = { id: string; weekday: number; session: "day" | "evening"; capacity: number; instructor: { name: string } | null };
 
-export default async function AdminPage({ searchParams }: { searchParams: Promise<{ week?: string; error?: string; ok?: string; to?: string }> }) {
+export default async function AdminPage({ searchParams }: { searchParams: Promise<{ week?: string; error?: string; ok?: string; to?: string; cr?: string; later?: string }> }) {
   const me = await currentMember();
   if (!me) redirect("/login");
   if (!hasRole(me, "admin")) redirect("/");
-  const { week, error, ok, to } = await searchParams;
+  const { week, error, ok, to, cr, later } = await searchParams;
   const monday = isValidISODate(week) ? mondayOf(parseISODate(week)) : mondayOf(new Date());
   const mondayISO = toISODate(monday);
   const fridayISO = toISODate(addDays(monday, 4));
@@ -36,7 +36,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const S = (slots ?? []) as unknown as Slot[];
   const B = (bookings ?? []) as unknown as Booking[];
   const W = (waiting ?? []) as unknown as Waiting[];
-  const noticeText = ok === "cancelled" ? removedText(to) : undefined;
+  const noticeText = ok === "cancelled" ? removedText(to, cr, later) : undefined;
 
   const cell = (weekday: number, session: "day" | "evening") => {
     const slot = S.find((s) => s.weekday === weekday && s.session === session);

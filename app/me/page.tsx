@@ -13,10 +13,10 @@ import { daysBetween, PASS_REMIND_DAYS, passWorks, periodName, shortDay, type Pa
 import { paymentLabel } from "@/lib/payments";
 import { credits, type CreditBalance } from "@/lib/credits";
 
-export default async function MePage({ searchParams }: { searchParams: Promise<{ error?: string; ok?: string; to?: string; pass?: string }> }) {
+export default async function MePage({ searchParams }: { searchParams: Promise<{ error?: string; ok?: string; to?: string; pass?: string; cr?: string; later?: string }> }) {
   const me = await currentMember();
   if (!me) redirect("/login");
-  const { error, ok, to, pass: fromPass } = await searchParams;
+  const { error, ok, to, pass: fromPass, cr, later } = await searchParams;
   const supabase = await createClient();
   const todayISO = todayStockholm();
   const [{ data: bookings, error: bookingsErr }, { data: waitingRows, error: waitErr }, { data: settings }, { data: creditRow }, { data: passRows, error: passErr }, { data: offerRows, error: offerErr }] = await Promise.all([
@@ -72,7 +72,7 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
   const items: Item[] = [...list.map((b) => ({ kind: "seat" as const, date: b.date, b })), ...myWaiting.map((w) => ({ kind: "wait" as const, date: w.date, w }))]
     .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   const deadline = settings?.cancel_deadline_days ?? 1;
-  const noticeText = ok === "cancelled" && to ? cancelledText(to)
+  const noticeText = ok === "cancelled" ? cancelledText(to, cr, later)
     : ok === "paid" && fromPass ? "Thanks — your pass works now: book seats without paying. The treasurer confirms the payment when it shows up in the bank."
     : undefined;
 
@@ -202,7 +202,7 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
           );
         
         })}
-        <div className="muted small">Cancelling is free until {deadline} day{deadline === 1 ? "" : "s"} before the session. A seat that came to you from the waiting list can be declined any time before you pay.</div>
+        <div className="muted small">Cancelling is free until {deadline} day{deadline === 1 ? "" : "s"} before the session — what you paid comes back as credits (1 credit = 1 kr). A seat that came to you from the waiting list can be declined any time before you pay.</div>
         <div className="card row between" style={{ padding: "12px 16px", flexWrap: "wrap", gap: 8 }}>
           <div className="small"><b>Receipts</b><span className="muted"> · paid for something for the association? Send the receipt and get it back.</span></div>
           <Link href="/me/receipts" className="btn line sm">Receipts</Link>
