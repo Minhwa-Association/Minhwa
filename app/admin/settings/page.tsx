@@ -2,12 +2,13 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient, currentMember } from "@/lib/supabase/server";
 import { WEEKDAYS_LONG, sessionLabel } from "@/lib/dates";
-import { addMember, setCrewRate, setInstructor, setRoles, setSlotWhatsapp, updatePassSettings, updateSettings } from "@/app/actions";
+import { addMember, disconnectDrive, setCrewRate, setInstructor, setRoles, setSlotWhatsapp, updatePassSettings, updateSettings } from "@/app/actions";
 import { todayStockholm, parseISODate, toISODate } from "@/lib/dates";
 import { shortDay } from "@/lib/passes";
 import { ROLES, hasRole } from "@/lib/roles";
 import { Notice, TopNav } from "@/app/components";
 import { SubmitButton } from "@/app/SubmitButton";
+import { DRIVE_ACCOUNT, RECEIPTS_FOLDER, ROOT_FOLDER, driveConfigured, folderUrl } from "@/lib/drive";
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ error?: string; ok?: string }> }) {
   const me = await currentMember();
@@ -15,11 +16,15 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   if (!hasRole(me, "admin")) redirect("/");
   const { error, ok } = await searchParams;
   const supabase = await createClient();
-  const [{ data: settings }, { data: slots }, { data: members }] = await Promise.all([
+  const [{ data: settings }, { data: slots }, { data: members }, { data: driveRows }] = await Promise.all([
     supabase.from("settings").select("*").eq("id", 1).single(),
     supabase.from("slots").select("id, weekday, session, instructor_id, whatsapp_url").order("weekday").order("session"),
     supabase.from("members").select("id, name, phone, roles, auth_id, crew_rate_until").order("name"),
+    supabase.rpc("drive_status"),
   ]);
+  const driveRow = ((Array.isArray(driveRows) ? driveRows[0] : driveRows) ?? null) as { email: string; connected: boolean; connected_at: string; receipts_folder_id: string | null } | null;
+  const drive = driveRow?.connected ? driveRow : null;
+  const googleReady = driveConfigured();
   const teachers = (members ?? []).filter((m) => hasRole(m, "teacher"));
   const today = todayStockholm();
   const t = parseISODate(today);
@@ -36,6 +41,25 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       </div>
       <Notice error={error} ok={ok} />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 20, marginTop: 12 }}>
+
+        <div className="card stack" style={{ padding: 18 }} id="drive">
+          <h2>Google Drive</h2>
+          <div className="muted small">Approved receipts are copied to the association&apos;s Drive, folder &ldquo;{ROOT_FOLDER} / {RECEIPTS_FOLDER}&rdquo;. Connect once, signed in as <b>{DRIVE_ACCOUNT}</b>. The app can only see the files it puts there.</div>
+          {!googleReady ? (
+            <div className="notice">Not set up yet — add <span className="mono">GOOGLE_CLIENT_ID</span> and <span className="mono">GOOGLE_CLIENT_SECRET</span> in Vercel (see README → Google Drive), then redeploy.</div>
+          ) : drive ? (
+            <>
+              <div className="small">Connected as <b>{drive.email}</b> since {shortDay(drive.connected_at.slice(0, 10))}{drive.email !== DRIVE_ACCOUNT ? <span className="err-text"> — not {DRIVE_ACCOUNT}</span> : null}.</div>
+              <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                {drive.receipts_folder_id && <a href={folderUrl(drive.receipts_folder_id)} target="_blank" rel="noopener noreferrer" className="btn line sm">Open the Receipts folder</a>}
+                <a href="/api/google/connect" className="btn quiet sm">Reconnect</a>
+                <form action={disconnectDrive}><SubmitButton className="btn quiet sm" pendingText="Disconnecting…">Disconnect</SubmitButton></form>
+              </div>
+            </>
+          ) : (
+            <div className="row"><a href="/api/google/connect" className="btn ink sm">Connect Google Drive</a></div>
+          )}
+        </div>
 
         <form action={updateSettings} className="card stack" style={{ padding: 18 }}>
           <h2>Booking & Swish</h2>

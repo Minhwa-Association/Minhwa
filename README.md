@@ -68,6 +68,18 @@ A member pays for something for the association and mails the receipt (photo or 
 
 The treasurer (Payments → Receipts) checks the numbers, says who an unknown sender is (remembered), approves with the amount to pay back and a category (`ledger_categories`, seeded from the 2024 categories: 3985 membership · 3400 course · 3980 material sold / grant · 2893 loan · 5460 material · 6570 fees …), or declines with a reply. Then pays from Nordea to the account the member saved (`member_bank_accounts`, visible to the member and the treasurer only) with the claim code as message. When the statement is pasted, each outgoing line is matched to an approved claim by amount + member name (or the code in the message) and offered as "Paid — this line"; "Paid by hand" works without the bank. `unpay_claim` / `reopen_claim` take steps back. Claim statuses: `new → approved → paid`, or `declined`. A claim (receipt file + decision + bank line) is one voucher for the books; since July 2024 the digital copy is enough in Sweden.
 
+## Google Drive — the association's copy of approved receipts (v16.4)
+When the treasurer **approves** a receipt, its files are copied to the association's Google Drive (manager@minhwa.org), folder **Minhwa — Bokföring / Receipts**, named `2026-10-15 R0012 Material — Julien Petotte 450 kr.jpg` (purchase date, or the day it came in · claim code · category · member · amount). Approving again after a change renames the file; declining moves it to Drive's bin. The original always stays in the app. Each card shows **In Drive ✓** (opens the copy) or **Save to Drive** (try again). The app uses Google's `drive.file` access — it can only see the files and folders it made itself.
+
+**Setup (once)** — signed in as manager@minhwa.org:
+1. console.cloud.google.com → new project "Minhwa app" → APIs & Services → Library → **Google Drive API** → Enable.
+2. Google Auth Platform → Branding: app name "Minhwa app", support e-mail manager@minhwa.org → Audience: **Internal** (only minhwa.org accounts; no review, keys do not expire after 7 days).
+3. Clients → Create client → Web application → Authorised redirect URI **https://app.minhwa.org/api/google/callback** → copy the Client ID and Client secret.
+4. Vercel → project minhwa → Settings → Environment Variables (Production): `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` → redeploy.
+5. In the app: Admin → Settings → **Google Drive → Connect Google Drive** → sign in as manager@minhwa.org → Allow. The folders are made at once.
+
+The lasting key is kept in `drive_connection`, encrypted with a key made from `GOOGLE_CLIENT_SECRET` (changing the secret means connecting again). `GOOGLE_TEST_ORIGIN` exists only for tests (a fake Google) — never set it in Vercel.
+
 ## Credits (v14)
 Crew help with the association's activities and get **credits instead of pay**: 1 credit = 1 kr, no expiry. The treasurer gives them in Payments → Credits (`give_credits`: member, amount, what for, optionally the Calendar activity). Everything is a row in `credit_movements` — `grant` (+) · `spend` (−, on a payment) · `return` (+, cancelled / refunded) · `adjust` (±, a correction with a reason); the balance is the sum (`credit_balances`, `my_credits()`) and can never go below 0. A grant is taken back with `void_credits` only while the member still has the credits.
 

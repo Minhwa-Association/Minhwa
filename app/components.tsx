@@ -60,6 +60,8 @@ export function Notice({ error, ok, text }: { error?: string; ok?: string; text?
   if (ok === "event_deleted") return <div className="notice ok">Event deleted.</div>;
   if (ok === "link_reset") return <div className="notice ok">New link created. The old link no longer works — add the new one to your phone.</div>;
   if (ok === "confirmed") return <div className="notice ok">Payment confirmed.</div>;
+  if (ok === "drive_connected") return <div className="notice ok">Google Drive connected — approved receipts now go to &ldquo;Minhwa — Bokföring / Receipts&rdquo;.</div>;
+  if (ok === "drive_disconnected") return <div className="notice ok">Google Drive disconnected. Files already there stay; new approvals are not copied until it is connected again.</div>;
   if (ok === "never_came") return <div className="notice ok">Closed — the money never came. If it turns up later, the bank line can still be matched to it.</div>;
   if (ok === "undone") return <div className="notice ok">Confirmation taken back — the payment is waiting again.</div>;
   if (ok === "rejected") return <div className="notice ok">Suggestion removed — the bank line is waiting again.</div>;

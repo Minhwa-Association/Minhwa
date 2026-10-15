@@ -2,10 +2,28 @@ import Link from "next/link";
 import { shortDate } from "@/lib/dates";
 import { bankDate } from "@/lib/payments";
 import { CLAIM_STATUS_LABEL, claimSummary, formatAccount, receiptMoney, sek, type ClaimFile, type ClaimRow, type LedgerCategory } from "@/lib/claims";
-import { decideClaim, linkClaimMember, markClaimPaid, rejectClaimSuggestion, reopenClaim, rereadClaim, sendClaimAck, unpayClaim } from "@/app/actions";
+import { decideClaim, linkClaimMember, markClaimPaid, rejectClaimSuggestion, reopenClaim, rereadClaim, saveClaimDrive, sendClaimAck, unpayClaim } from "@/app/actions";
+import { fileUrl } from "@/lib/drive-links";
 import { SubmitButton } from "@/app/SubmitButton";
 
 export type FileLink = ClaimFile & { url: string | null };
+/** v16.4: how many of a receipt's files are in Google Drive */
+export type DriveInfo = { total: number; saved: number; firstId: string | null; on: boolean };
+
+/** "In Drive ✓" (opens the file) or "Save to Drive" */
+function DriveMark({ c, drive }: { c: ClaimRow; drive?: DriveInfo }) {
+  if (!drive || drive.total === 0) return null;
+  if (drive.saved === drive.total && drive.firstId) {
+    return <a href={fileUrl(drive.firstId)} target="_blank" rel="noopener noreferrer" className="tag paid" title="Open the copy in Google Drive" style={{ textDecoration: "none" }}>In Drive ✓</a>;
+  }
+  if (!drive.on) return <span className="tag unpaid" title="Google Drive is not connected (Settings)">Not in Drive</span>;
+  return (
+    <form action={saveClaimDrive}>
+      <input type="hidden" name="claim_id" value={c.id} />
+      <SubmitButton className="btn line sm" pendingText="Saving…" title="Copy this receipt to the association's Google Drive">Save to Drive</SubmitButton>
+    </form>
+  );
+}
 export type OutgoingLine = { id: string; booked_on: string; amount_sek: number | string; counterparty: string | null; message: string | null; title: string };
 
 function isImage(ct: string | null | undefined) { return (ct ?? "").startsWith("image/"); }
@@ -112,7 +130,7 @@ export function NewClaim({ c, files, members, categories }: { c: ClaimRow; files
 }
 
 /** Approved: pay from the bank, then tick */
-export function ApprovedClaim({ c, files, lines }: { c: ClaimRow; files: FileLink[]; lines: OutgoingLine[] }) {
+export function ApprovedClaim({ c, files, lines, drive }: { c: ClaimRow; files: FileLink[]; lines: OutgoingLine[]; drive?: DriveInfo }) {
   const sameAmount = lines.filter((l) => Math.abs(Number(l.amount_sek)) === Number(c.approved_amount_sek) && l.id !== c.suggested_tx_id);
   return (
     <div className="claim">
@@ -153,6 +171,7 @@ export function ApprovedClaim({ c, files, lines }: { c: ClaimRow; files: FileLin
             <button className="btn line sm" title="Mark as paid without a bank line (the date is optional — today if empty)">Paid by hand</button>
           </form>
           <form action={reopenClaim}><input type="hidden" name="claim_id" value={c.id} /><button className="btn quiet sm">Back to checking</button></form>
+          <DriveMark c={c} drive={drive} />
         </div>
       </div>
     </div>
@@ -160,7 +179,7 @@ export function ApprovedClaim({ c, files, lines }: { c: ClaimRow; files: FileLin
 }
 
 /** Paid / declined rows */
-export function DoneClaim({ c }: { c: ClaimRow }) {
+export function DoneClaim({ c, drive }: { c: ClaimRow; drive?: DriveInfo }) {
   return (
     <div className="txrow" style={{ gridTemplateColumns: "44px minmax(0, 1fr) auto" }}>
       <div className="muted small">{c.paid_at ? bankDate(c.paid_at) : c.reviewed_at ? shortDate(new Date(c.reviewed_at)) : ""}</div>
@@ -171,6 +190,7 @@ export function DoneClaim({ c }: { c: ClaimRow }) {
       <div className="actions" style={{ gridColumn: "auto", alignItems: "center" }}>
         {c.status === "paid" && <span className="amt" style={{ fontSize: 16 }}>{sek(c.approved_amount_sek)}</span>}
         <span className={`tag ${c.status === "paid" ? "paid" : "unpaid"}`}>{CLAIM_STATUS_LABEL[c.status]}</span>
+        {c.status === "paid" && <DriveMark c={c} drive={drive} />}
         {c.status === "paid" && <form action={unpayClaim}><input type="hidden" name="claim_id" value={c.id} /><button className="btn quiet sm">Undo</button></form>}
         {c.status === "declined" && <form action={reopenClaim}><input type="hidden" name="claim_id" value={c.id} /><button className="btn quiet sm">Reopen</button></form>}
       </div>

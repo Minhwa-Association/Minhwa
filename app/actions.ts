@@ -11,6 +11,7 @@ import { MAX_PHOTOS, PHOTO_BUCKET, thumbPath } from "@/lib/store";
 import { after } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { finishClaim } from "@/lib/claims-process";
+import { removeClaimFromDrive, saveClaimToDrive } from "@/lib/drive";
 
 function backWithError(path: string, message: string): never {
   const sep = path.includes("?") ? "&" : "?";
@@ -779,17 +780,45 @@ export async function decideClaim(formData: FormData) {
     if (!amount) backWithError(RECEIPTS, "Type the amount to pay back before approving.");
     const { error } = await supabase.rpc("approve_claim", { p_claim_id: claimId, p_amount_sek: Number(amount), p_category_code: fields.category_code ?? null, p_reply: optText(formData, "reply") ?? null });
     if (error) backWithError(RECEIPTS, error.message);
+    // v16.4: the association's copy in Google Drive — approval stands even when Drive fails
+    const drive = await saveClaimToDrive(supabase, claimId);
     refreshReceipts();
-    redirect(`${RECEIPTS}?ok=approved`);
+    redirect(`${RECEIPTS}?ok=approved&drive=${drive.state}${drive.message ? `&note=${encodeURIComponent(drive.message)}` : ""}`);
   }
   if (action === "decline") {
     const { error } = await supabase.rpc("decline_claim", { p_claim_id: claimId, p_reply: optText(formData, "reply") ?? null });
     if (error) backWithError(RECEIPTS, error.message);
+    await removeClaimFromDrive(supabase, claimId);   // v16.4: if it was in Drive already → Drive's bin
     refreshReceipts();
     redirect(`${RECEIPTS}?ok=declined`);
   }
   refreshReceipts();
   redirect(`${RECEIPTS}?ok=saved`);
+}
+
+/** v16.4: put an approved / paid receipt into Google Drive (again) — "Save to Drive" on the card. */
+export async function saveClaimDrive(formData: FormData) {
+  await treasurer();
+  const claimId = String(formData.get("claim_id"));
+  const supabase = await createClient();
+  const drive = await saveClaimToDrive(supabase, claimId);
+  refreshReceipts();
+  if (drive.state === "off") backWithError(RECEIPTS, "Google Drive is not connected — an admin connects it in Settings → Google Drive.");
+  if (drive.state === "failed") backWithError(RECEIPTS, `Could not save to Google Drive: ${drive.message ?? "unknown error"}`);
+  redirect(`${RECEIPTS}?ok=drive_saved&n=${drive.saved}`);
+}
+
+/** v16.4: Settings → disconnect Google Drive (files already there stay). */
+export async function disconnectDrive() {
+  const me = await currentMember();
+  if (!me) redirect("/login");
+  if (!hasRole(me, "admin")) redirect("/");
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("drive_disconnect");
+  if (error) backWithError("/admin/settings", error.message);
+  revalidatePath("/admin/settings");
+  revalidatePath(RECEIPTS);
+  redirect("/admin/settings?ok=drive_disconnected");
 }
 
 export async function reopenClaim(formData: FormData) {

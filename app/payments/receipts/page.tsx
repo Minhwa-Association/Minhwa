@@ -5,9 +5,10 @@ import { canUsePayments } from "@/lib/roles";
 import { RECEIPTS_BUCKET, RECEIPT_ADDRESS, type ClaimFile, type ClaimRow, type LedgerCategory } from "@/lib/claims";
 import { findClaimsInBank } from "@/app/actions";
 import { Notice, TopNav } from "@/app/components";
-import { ApprovedClaim, DoneClaim, NewClaim, type FileLink, type OutgoingLine } from "./ClaimCards";
+import { ApprovedClaim, DoneClaim, NewClaim, type DriveInfo, type FileLink, type OutgoingLine } from "./ClaimCards";
+import { RECEIPTS_FOLDER, ROOT_FOLDER, driveConfigured, folderUrl } from "@/lib/drive";
 
-type Q = { error?: string; ok?: string; n?: string; note?: string };
+type Q = { error?: string; ok?: string; n?: string; note?: string; drive?: string };
 
 function Count({ n }: { n: number }) {
   return <span className={`count ${n === 0 ? "zero" : ""}`}>{n}</span>;
@@ -18,6 +19,8 @@ function okText(q: Q): string | undefined {
   if (q.ok === "reread") return `Read again${q.note ? ` — ${q.note}` : "."}`;
   if (q.ok === "reread_failed") return `Could not read it${q.note ? `: ${q.note}` : "."} Type the values by hand.`;
   if (q.ok === "saved") return "Saved.";
+  if (q.ok === "approved") return `Approved. Pay it from the bank, then tick it here — or paste the statement and the line is found for you.${q.drive === "saved" ? ` The receipt is in Google Drive (${ROOT_FOLDER} / ${RECEIPTS_FOLDER}).` : ""}`;
+  if (q.ok === "drive_saved") return Number(q.n ?? 0) > 0 ? "Saved to Google Drive." : "Already in Google Drive — the file name is up to date.";
   return undefined;
 }
 
@@ -28,11 +31,14 @@ export default async function ReceiptsPage({ searchParams }: { searchParams: Pro
   const q = await searchParams;
   const supabase = await createClient();
 
-  const [{ data: claimRows }, { data: memberRows }, { data: catRows }] = await Promise.all([
+  const [{ data: claimRows }, { data: memberRows }, { data: catRows }, { data: driveRows }] = await Promise.all([
     supabase.from("claims_view").select("*").order("received_at", { ascending: false }).limit(300),
     supabase.from("members").select("id, name").eq("active", true).order("name"),
     supabase.from("ledger_categories").select("*").order("sort"),
+    supabase.rpc("drive_status"),
   ]);
+  const drive = ((Array.isArray(driveRows) ? driveRows[0] : driveRows) ?? null) as { email: string; connected: boolean; receipts_folder_id: string | null } | null;
+  const driveOn = !!drive?.connected && driveConfigured();
   const claims = (claimRows ?? []) as ClaimRow[];
   const members = (memberRows ?? []) as { id: string; name: string }[];
   const categories = (catRows ?? []) as LedgerCategory[];
@@ -58,6 +64,19 @@ export default async function ReceiptsPage({ searchParams }: { searchParams: Pro
     }
   }
 
+  // v16.4: which approved / paid receipts are in Google Drive
+  const driveByClaim = new Map<string, DriveInfo>();
+  const kept = [...approved, ...paid];
+  if (kept.length > 0) {
+    const { data: dRows } = await supabase.from("claim_files").select("claim_id, drive_file_id, sort").in("claim_id", kept.map((c) => c.id)).order("sort");
+    for (const r of (dRows ?? []) as { claim_id: string; drive_file_id: string | null }[]) {
+      const d = driveByClaim.get(r.claim_id) ?? { total: 0, saved: 0, firstId: null, on: driveOn };
+      d.total++;
+      if (r.drive_file_id) { d.saved++; d.firstId = d.firstId ?? r.drive_file_id; }
+      driveByClaim.set(r.claim_id, d);
+    }
+  }
+
   // outgoing bank lines not yet tied to anything — offered as "that line" for approved claims
   let lines: OutgoingLine[] = [];
   if (approved.length > 0) {
@@ -77,6 +96,12 @@ export default async function ReceiptsPage({ searchParams }: { searchParams: Pro
 
       <div className="stack" style={{ gap: 18 }}>
         <Notice error={q.error} ok={q.ok} text={okText(q)} />
+        {q.ok === "approved" && q.drive === "failed" && <div className="notice err">Could not save it to Google Drive{q.note ? `: ${q.note}` : ""}. The approval stands — tap &ldquo;Save to Drive&rdquo; on the card to try again.</div>}
+        <div className="muted small">
+          {driveOn
+            ? <>Approved receipts are copied to Google Drive · <a href={folderUrl(drive!.receipts_folder_id ?? "")} target="_blank" rel="noopener noreferrer" style={{ fontWeight: 600 }}>{ROOT_FOLDER} / {RECEIPTS_FOLDER}</a></>
+            : <>Google Drive is not connected — approved receipts stay only in the app. An admin connects it in <Link href="/admin/settings#drive" style={{ fontWeight: 600 }}>Settings → Google Drive</Link>.</>}
+        </div>
         {missing.length > 0 && <div className="notice">Setup not finished — missing in Vercel: <span className="mono">{missing.join(", ")}</span>. Mails are not taken in until these are set (see README).</div>}
 
         <details className="card paysect" style={{ padding: 14 }}>
@@ -102,13 +127,13 @@ export default async function ReceiptsPage({ searchParams }: { searchParams: Pro
           </div>
           <div className="muted small">Transfer the amount from Nordea to the member&apos;s account with the claim code as message. Paste the statement in <Link href="/payments" style={{ fontWeight: 600 }}>Payments</Link> and the line is offered here; or tick &ldquo;Paid by hand&rdquo;.</div>
           {approved.length === 0 && <div className="card dashed" style={{ padding: 16, textAlign: "center" }}>Nothing to pay.</div>}
-          {approved.map((c) => <ApprovedClaim key={c.id} c={c} files={filesByClaim.get(c.id) ?? []} lines={lines} />)}
+          {approved.map((c) => <ApprovedClaim key={c.id} c={c} files={filesByClaim.get(c.id) ?? []} lines={lines} drive={driveByClaim.get(c.id)} />)}
         </section>
 
         <section className="card stack paysect" style={{ padding: 18 }}>
           <h2>Paid recently <Count n={paid.length} /></h2>
           {paid.length === 0 && <div className="muted small">Nothing paid yet.</div>}
-          {paid.map((c) => <DoneClaim key={c.id} c={c} />)}
+          {paid.map((c) => <DoneClaim key={c.id} c={c} drive={driveByClaim.get(c.id)} />)}
         </section>
 
         {declined.length > 0 && (
