@@ -6,6 +6,7 @@ import { buyPass } from "@/app/actions";
 import { Chevron, Notice } from "@/app/components";
 import { PASS_KINDS, passWorks, periodLabel, periodName, shortDay, type PassKind, type PassOffer, type PassRow } from "@/lib/passes";
 import { paymentLabel } from "@/lib/payments";
+import { SubmitButton } from "@/app/SubmitButton";
 
 /** Choose and buy a monthly pass. /pass?period=2026-11-01 picks the period (default: the first one open). */
 export default async function PassPage({ searchParams }: { searchParams: Promise<{ period?: string; error?: string }> }) {
@@ -92,7 +93,7 @@ export default async function PassPage({ searchParams }: { searchParams: Promise
               </label>
             ))}
             <div className="footer" style={{ marginTop: 6 }}>
-              <button className="btn red">{canChange ? "Change my pass" : "Buy and pay with Swish"}</button>
+              <SubmitButton className="btn red" pendingText="One moment…">{canChange ? "Change my pass" : "Buy and pay with Swish"}</SubmitButton>
               <div className="muted small" style={{ textAlign: "center" }}>The pass works as soon as you tap &ldquo;I have paid&rdquo;. Seats you already booked in this period and haven&apos;t paid move onto it.</div>
             </div>
           </form>

@@ -11,6 +11,7 @@ import { Notice, TopNav } from "@/app/components";
 import { PhotoUploader } from "./PhotoUploader";
 import { GroupOrderSection, RefundButton, type WaitingLine } from "./GroupOrderSection";
 import { RequestsSection } from "./RequestsSection";
+import { SubmitButton } from "@/app/SubmitButton";
 
 type Movement = { id: string; qty: number; kind: string; note: string | null; created_at: string; product: { name: string; variant: string | null; code: string } | null };
 type Q = { error?: string; ok?: string; n?: string; c?: string; s?: string };
@@ -176,7 +177,7 @@ export default async function StoreAdminPage({ searchParams }: { searchParams: P
                       <span className={`tag ${lvl === "ok" ? "paid" : lvl === "low" ? "pending" : "unpaid"}`} style={{ marginLeft: 0 }}>{p.stock} in stock{lvl === "low" ? " · low" : lvl === "out" ? " · out" : ""}</span>
                       <input name="qty" type="number" step={1} placeholder="+/−" aria-label="Change stock by" className="qty" />
                       <input name="note" placeholder="why (optional)" aria-label="Reason" />
-                      <button className="btn quiet sm">Adjust</button>
+                      <SubmitButton className="btn quiet sm" pendingText="Saving…">Adjust</SubmitButton>
                     </form>
                   </div>
                 );
@@ -207,7 +208,7 @@ export default async function StoreAdminPage({ searchParams }: { searchParams: P
               <div><label htmlFor="np_open">Stock now</label><input id="np_open" name="opening_stock" type="number" min={0} step={1} defaultValue={0} /></div>
             </div>
             <label className="check" style={{ alignSelf: "flex-start" }}><input type="checkbox" name="active" defaultChecked /> On the list</label>
-            <button className="btn ink sm" style={{ alignSelf: "flex-start" }}>Add product</button>
+            <SubmitButton className="btn ink sm" style={{ alignSelf: "flex-start" }} pendingText="Adding…">Add product</SubmitButton>
           </form>
         </details>
 

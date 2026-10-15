@@ -4,6 +4,7 @@ import { kr } from "@/lib/payments";
 import { BATCH_STATUS_LABEL, batchCosts, defaultBatchName, krw, priceFromCost, type Batch, type PurchaseListRow } from "@/lib/store";
 import { credits, refundSplit } from "@/lib/credits";
 import { addAllWaitingToBatch, addLineToBatch, markBatchArrived, markBatchOrdered, refundLine, removeLineFromBatch, saveBatchCosts, setProductPrice, setRestock, startBatch, suggestRestock } from "@/app/actions";
+import { SubmitButton } from "@/app/SubmitButton";
 
 export type WaitingLine = {
   id: string; order_id: string; qty: number; name: string; unit_price_sek: number; status: string; batch_id: string | null; updated_at: string;
@@ -61,7 +62,7 @@ export function GroupOrderSection({ batch, list, waiting, onBatch, past, krwPerS
       {!batch && (
         <form action={startBatch} className="row" style={{ gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
           <div className="grow"><label htmlFor="batch_name">Name of the next group order</label><input id="batch_name" name="name" defaultValue={defaultBatchName()} required /></div>
-          <button className="btn ink sm" style={{ minHeight: 48 }}>Start a group order</button>
+          <SubmitButton className="btn ink sm" style={{ minHeight: 48 }} pendingText="Starting…">Start a group order</SubmitButton>
         </form>
       )}
       <div className="muted small">
@@ -97,7 +98,7 @@ export function GroupOrderSection({ batch, list, waiting, onBatch, past, krwPerS
           <div className="stack" style={{ gap: 6 }}>
             <div className="row between" style={{ flexWrap: "wrap", gap: 6 }}>
               <div className="bold">Shopping list <span className="muted small">· {pieces} piece{pieces === 1 ? "" : "s"} · members paid {kr(membersPaid)} · restock worth {kr(restockValue)} at sale price</span></div>
-              {open && <form action={suggestRestock}><input type="hidden" name="batch_id" value={batch.id} /><button className="btn line sm">Add restock for low-stock products</button></form>}
+              {open && <form action={suggestRestock}><input type="hidden" name="batch_id" value={batch.id} /><SubmitButton className="btn line sm" pendingText="Adding…">Add restock for low-stock products</SubmitButton></form>}
             </div>
             {list.length === 0 && <div className="muted small">Empty — put waiting lines on it or add restock.</div>}
             {list.length > 0 && (

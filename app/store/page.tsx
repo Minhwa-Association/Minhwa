@@ -6,6 +6,7 @@ import { availability, groupProducts, photoUrl, productLabel, type Product } fro
 import { createRequest, placeOrder } from "@/app/actions";
 import { Notice, TopNav } from "@/app/components";
 import { balanceOf, credits } from "@/lib/credits";
+import { SubmitButton } from "@/app/SubmitButton";
 
 export default async function StorePage({ searchParams }: { searchParams: Promise<{ error?: string; ok?: string }> }) {
   const me = await currentMember();
@@ -81,7 +82,7 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
                 <span>Use my credits first · <b>{credits(balance)}</b> <span className="muted" style={{ fontWeight: 500 }}>(1 credit = 1 kr)</span></span>
               </label>
             )}
-            <button className="btn red">{balance > 0 ? "Order & pay" : "Order & pay with Swish"}</button>
+            <SubmitButton className="btn red" pendingText="Placing your order…">{balance > 0 ? "Order & pay" : "Order & pay with Swish"}</SubmitButton>
             <div className="muted small" style={{ textAlign: "center" }}>
               {balance > 0
                 ? <>Credits cover what they can; Swish to {settings?.swish_payee_name ?? "the association"} opens on the next page for the rest.</>
@@ -93,7 +94,7 @@ export default async function StorePage({ searchParams }: { searchParams: Promis
         <form action={createRequest} className="card stack" style={{ padding: 16, marginTop: 8 }}>
           <div><div className="bold">Something missing?</div><div className="muted small">Ask for a material that is not on the list. The treasurer answers under My orders — and adds it to the Store if it can be bought in Korea.</div></div>
           <textarea name="text" rows={2} maxLength={500} required minLength={3} placeholder="e.g. gold leaf sheets for outlines, or a larger backing paper" />
-          <button className="btn line sm" style={{ alignSelf: "flex-start" }}>Send request</button>
+          <SubmitButton className="btn line sm" style={{ alignSelf: "flex-start" }} pendingText="Sending…">Send request</SubmitButton>
         </form>
       </div>
     </main>

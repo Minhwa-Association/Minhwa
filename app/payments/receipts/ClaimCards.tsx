@@ -3,6 +3,7 @@ import { shortDate } from "@/lib/dates";
 import { bankDate } from "@/lib/payments";
 import { CLAIM_STATUS_LABEL, claimSummary, formatAccount, receiptMoney, sek, type ClaimFile, type ClaimRow, type LedgerCategory } from "@/lib/claims";
 import { decideClaim, linkClaimMember, markClaimPaid, rejectClaimSuggestion, reopenClaim, rereadClaim, sendClaimAck, unpayClaim } from "@/app/actions";
+import { SubmitButton } from "@/app/SubmitButton";
 
 export type FileLink = ClaimFile & { url: string | null };
 export type OutgoingLine = { id: string; booked_on: string; amount_sek: number | string; counterparty: string | null; message: string | null; title: string };
@@ -102,7 +103,7 @@ export function NewClaim({ c, files, members, categories }: { c: ClaimRow; files
         <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
           <form action={rereadClaim}><input type="hidden" name="claim_id" value={c.id} /><button className="btn quiet sm" title="Read the receipt again with the reader (overwrites the reading)">Read again</button></form>
           {c.member_id && c.sender_email && !c.acked_at && (
-            <form action={sendClaimAck}><input type="hidden" name="claim_id" value={c.id} /><button className="btn quiet sm" title="Send the automatic 'received' reply now">Send &ldquo;received&rdquo; reply</button></form>
+            <form action={sendClaimAck}><input type="hidden" name="claim_id" value={c.id} /><SubmitButton className="btn quiet sm" pendingText="Sending…" title="Send the automatic 'received' reply now">Send &ldquo;received&rdquo; reply</SubmitButton></form>
           )}
         </div>
       </div>

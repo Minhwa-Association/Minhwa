@@ -8,6 +8,7 @@ import { bookSeat, cancelBooking, claimPayment, joinWaitlist, leaveWaitlist } fr
 import { PassTag, PaymentTag, Chevron, Notice, LoadError } from "@/app/components";
 import { loadFailed } from "@/lib/loadError";
 import type { PassCover } from "@/lib/passes";
+import { SubmitButton } from "@/app/SubmitButton";
 
 export default async function SlotPage({ params, searchParams }: {
   params: Promise<{ slotId: string; date: string }>;
@@ -176,7 +177,7 @@ export default async function SlotPage({ params, searchParams }: {
               <form action={bookSeat}>
                 <input type="hidden" name="slot_id" value={slotId} />
                 <input type="hidden" name="date" value={date} />
-                <button className="btn red">A seat is open — take it · {costText}</button>
+                <SubmitButton className="btn red" pendingText="Booking…">A seat is open — take it · {costText}</SubmitButton>
               </form>
             )}
             <form action={leaveWaitlist}>
@@ -194,7 +195,7 @@ export default async function SlotPage({ params, searchParams }: {
             <form action={joinWaitlist}>
               <input type="hidden" name="slot_id" value={slotId} />
               <input type="hidden" name="date" value={date} />
-              <button className="btn ink">Join the waiting list{queue.length > 0 ? ` · #${queue.length + 1}` : ""}</button>
+              <SubmitButton className="btn ink" pendingText="Joining…">Join the waiting list{queue.length > 0 ? ` · #${queue.length + 1}` : ""}</SubmitButton>
             </form>
             <div className="muted small" style={{ textAlign: "center" }}>This session is full. If someone cancels, the first in line gets the seat automatically{cover === "pass" || cover === "cap" ? " — your pass covers it" : ` — and pays ${price} kr then`}. Free to leave the list.</div>
           </>
@@ -206,7 +207,7 @@ export default async function SlotPage({ params, searchParams }: {
             <form action={bookSeat}>
               <input type="hidden" name="slot_id" value={slotId} />
               <input type="hidden" name="date" value={date} />
-              <button className="btn red">Book this seat · {costText}</button>
+              <SubmitButton className="btn red" pendingText="Booking…">Book this seat · {costText}</SubmitButton>
             </form>
             <div className="muted small" style={{ textAlign: "center" }}>{cover === "pass" ? "Covered by your monthly pass — nothing to pay" : "Swish opens right after you book"}</div>
           </>

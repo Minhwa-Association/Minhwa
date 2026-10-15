@@ -7,6 +7,7 @@ import { todayStockholm, parseISODate, toISODate } from "@/lib/dates";
 import { shortDay } from "@/lib/passes";
 import { ROLES, hasRole } from "@/lib/roles";
 import { Notice, TopNav } from "@/app/components";
+import { SubmitButton } from "@/app/SubmitButton";
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ error?: string; ok?: string }> }) {
   const me = await currentMember();
@@ -126,7 +127,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
               ))}
             </div>
           </div>
-          <button className="btn ink">Add</button>
+          <SubmitButton className="btn ink" pendingText="Adding…">Add</SubmitButton>
         </form>
 
         <div className="card stack" style={{ padding: 18 }}>

@@ -1,5 +1,6 @@
 import { AUDIENCES, audienceToKey, type EventRow } from "@/lib/calendar";
 import { hm } from "@/lib/dates";
+import { SubmitButton } from "@/app/SubmitButton";
 
 /** Shared form for a new event and for editing one. */
 export function EventForm({
@@ -55,7 +56,7 @@ export function EventForm({
         </select>
         <div className="muted small" style={{ marginTop: 4 }}>Only Crew and Admin can open the calendar. &ldquo;Admin only&rdquo; hides it from Crew.</div>
       </div>
-      <button className="btn ink">{submitLabel}</button>
+      <SubmitButton className="btn ink" pendingText="Saving…">{submitLabel}</SubmitButton>
     </form>
   );
 }

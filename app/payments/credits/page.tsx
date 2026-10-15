@@ -6,6 +6,7 @@ import { parseISODate, shortDate } from "@/lib/dates";
 import { CREDIT_KIND_LABEL, CREDIT_YEAR_NOTICE, credits, creditText, signed, type CreditBalance, type CreditLine } from "@/lib/credits";
 import { adjustCredits, giveCredits, voidCredits } from "@/app/actions";
 import { Notice, TopNav } from "@/app/components";
+import { SubmitButton } from "@/app/SubmitButton";
 
 type Q = { error?: string; ok?: string; m?: string; c?: string };
 type MemberOpt = { id: string; name: string; roles: string[] | null; active: boolean };
@@ -114,7 +115,7 @@ export default async function CreditsPage({ searchParams }: { searchParams: Prom
               </select>
             </label>
             <label>What for<input name="note" maxLength={200} placeholder="e.g. set up the art fair booth — empty = the activity's name" /></label>
-            <div className="cbtns"><button className="btn ink sm">Give credits</button><span className="muted small">The member sees it at once under My seats → Credits. A mistake? &ldquo;Take back&rdquo; below, while the credits are unused.</span></div>
+            <div className="cbtns"><SubmitButton className="btn ink sm" pendingText="Giving…">Give credits</SubmitButton><span className="muted small">The member sees it at once under My seats → Credits. A mistake? &ldquo;Take back&rdquo; below, while the credits are unused.</span></div>
           </div>
         </form>
 
@@ -136,7 +137,7 @@ export default async function CreditsPage({ searchParams }: { searchParams: Prom
                 <input type="hidden" name="member_id" value={m} />
                 <label className="strong">Credits, + or −<input name="amount" inputMode="text" required placeholder="e.g. 50 or -50" /></label>
                 <label className="wide">Why<input name="note" maxLength={200} required placeholder="e.g. credits noted on paper before the app" /></label>
-                <div className="cbtns"><button className="btn line sm">Correct</button><span className="muted small">For fixes only — use &ldquo;Give credits&rdquo; for work done. The balance can&apos;t go below 0.</span></div>
+                <div className="cbtns"><SubmitButton className="btn line sm" pendingText="Saving…">Correct</SubmitButton><span className="muted small">For fixes only — use &ldquo;Give credits&rdquo; for work done. The balance can&apos;t go below 0.</span></div>
               </form>
             </details>
           </section>
