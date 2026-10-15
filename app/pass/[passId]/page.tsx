@@ -20,9 +20,12 @@ export default async function PassPayPage({ params, searchParams }: { params: Pr
   ]);
   const p = row as PassRow | null;
   if (!p || p.member_id !== me.id) notFound();
-  const { data: pay } = p.payment_id
-    ? await supabase.from("payments").select("note, amount_sek").eq("id", p.payment_id).single()
-    : { data: null };
+  const [{ data: pay }, { data: receiptRow }] = await Promise.all([
+    p.payment_id ? supabase.from("payments").select("note, amount_sek").eq("id", p.payment_id).single() : Promise.resolve({ data: null }),
+    // v17: the receipt, once the payment is confirmed
+    p.payment_id ? supabase.from("sales_receipts").select("id, number").eq("payment_id", p.payment_id).is("voided_at", null).maybeSingle() : Promise.resolve({ data: null }),
+  ]);
+  const receipt = receiptRow as { id: string; number: string } | null;
 
   const payee = settings?.swish_number ?? "";
   const amount = Number(pay?.amount_sek ?? p.price_sek);
@@ -82,6 +85,7 @@ export default async function PassPayPage({ params, searchParams }: { params: Pr
             </form>
           </>
         )}
+        {receipt && <Link href={`/receipt/${receipt.id}?from=pass&p=${p.id}`} className="btn line">Receipt {receipt.number}</Link>}
         {(works || cancelled) && <Link href="/me" className="btn ink">Back to My seats</Link>}
         {works && <div className="muted small" style={{ textAlign: "center" }}>Valid for {periodName(p.period_start, p.period_end)}.</div>}
       </div>

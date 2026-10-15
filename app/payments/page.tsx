@@ -56,7 +56,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
   const showOther = q.show === "other";
 
   const supabase = await createClient();
-  const [{ data: matchedRows }, { data: waitingRows }, { data: openRows }, { data: claimedRows }, { data: confirmedRows }, { count: nOut }, { count: nIgn }, otherRes, { count: nClaims }, { count: nToPay }, { data: creditRows }, { data: cancelledSeatRows }] = await Promise.all([
+  const [{ data: matchedRows }, { data: waitingRows }, { data: openRows }, { data: claimedRows }, { data: confirmedRows }, { count: nOut }, { count: nIgn }, otherRes, { count: nClaims }, { count: nToPay }, { data: creditRows }, { data: cancelledSeatRows }, { data: receiptRows }, { count: nKvittonMissing }] = await Promise.all([
     supabase.from("bank_transactions").select(TX_SELECT).in("status", ["matched", "suggested"]).order("booked_on", { ascending: false }).order("imported_at", { ascending: false }),
     supabase.from("bank_transactions").select(TX_SELECT).eq("status", "unmatched").gt("amount_sek", 0).order("booked_on", { ascending: false }).order("imported_at", { ascending: false }),
     supabase.from("payments_view").select("*").in("status", ["pending", "claimed"]).is("bank_tx_id", null).order("member_name").order("created_at"),
@@ -73,7 +73,11 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
     // v16.2: seats cancelled before the money was seen — a bank line can still belong to one (→ credits)
     supabase.from("payments_view").select("*").eq("kind", "seat").eq("status", "cancelled").eq("booking_status", "cancelled")
       .is("bank_tx_id", null).gte("created_at", new Date(Date.now() - 60 * 86400000).toISOString()).order("created_at", { ascending: false }).limit(100),
+    // v17: the receipt behind each recently confirmed payment
+    supabase.from("sales_receipts").select("id, number, payment_id, drive_file_id").is("voided_at", null).order("issued_at", { ascending: false }).limit(100),
+    supabase.from("sales_receipts").select("id", { count: "exact", head: true }).is("drive_file_id", null).is("voided_at", null),
   ]);
+  const receiptByPayment = new Map(((receiptRows ?? []) as { id: string; number: string; payment_id: string; drive_file_id: string | null }[]).map((r) => [r.payment_id, r]));
   const creditBalances = (creditRows ?? []) as { balance: number }[];
   const creditsOwed = creditBalances.reduce((s, b) => s + Number(b.balance), 0);
   const creditHolders = creditBalances.filter((b) => Number(b.balance) > 0).length;
@@ -117,6 +121,19 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
         <div className="card row between" style={{ padding: "12px 16px", flexWrap: "wrap", gap: 8 }}>
           <div className="small"><b>Monthly passes</b><span className="muted"> · who has which pass this period · cancel or refund</span></div>
           <Link href="/payments/passes" className="btn line sm">Open Passes</Link>
+        </div>
+
+        <div className="card row between" style={{ padding: "12px 16px", flexWrap: "wrap", gap: 8 }}>
+          <div className="small">
+            <b>Kvitton</b><span className="muted"> · the receipt each member gets for what they paid · PDF in the association&apos;s Drive</span>
+            {(nKvittonMissing ?? 0) > 0 && <span className="muted small"> · {nKvittonMissing} not in Drive yet</span>}
+          </div>
+          <Link href="/payments/kvitton" className="btn line sm">Open Kvitton</Link>
+        </div>
+
+        <div className="card row between" style={{ padding: "12px 16px", flexWrap: "wrap", gap: 8 }}>
+          <div className="small"><b>Tax check</b><span className="muted"> · the 75 % rule for business income, watched during the year</span></div>
+          <Link href="/payments/tax" className="btn line sm">Open Tax check</Link>
         </div>
 
         {/* 1. paste */}
@@ -289,6 +306,7 @@ export default async function PaymentsPage({ searchParams }: { searchParams: Pro
                 </div>
                 <div className="amt">{kr(p.amount_sek)}</div>
                 <div className="actions">
+                  {receiptByPayment.get(p.id) && <Link href={`/receipt/${receiptByPayment.get(p.id)!.id}?from=k`} className="btn line sm" title={receiptByPayment.get(p.id)!.drive_file_id ? "In Drive" : "Not in Drive yet"}>{receiptByPayment.get(p.id)!.number}</Link>}
                   {!(Number(p.amount_sek) === 0 && Number(p.credit_sek ?? 0) > 0) && (
                     <form action={undoConfirmation}>
                       <input type="hidden" name="payment_id" value={p.id} />

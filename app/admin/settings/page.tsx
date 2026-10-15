@@ -2,13 +2,13 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient, currentMember } from "@/lib/supabase/server";
 import { WEEKDAYS_LONG, sessionLabel } from "@/lib/dates";
-import { addMember, disconnectDrive, setCrewRate, setInstructor, setRoles, setSlotWhatsapp, updatePassSettings, updateSettings } from "@/app/actions";
+import { addMember, disconnectDrive, setCrewRate, setInstructor, setRoles, setSlotWhatsapp, updateOrgSettings, updatePassSettings, updateSettings } from "@/app/actions";
 import { todayStockholm, parseISODate, toISODate } from "@/lib/dates";
 import { shortDay } from "@/lib/passes";
 import { ROLES, hasRole } from "@/lib/roles";
 import { Notice, TopNav } from "@/app/components";
 import { SubmitButton } from "@/app/SubmitButton";
-import { DRIVE_ACCOUNT, RECEIPTS_FOLDER, ROOT_FOLDER, driveConfigured, folderUrl } from "@/lib/drive";
+import { DRIVE_ACCOUNT, KVITTON_FOLDER, RECEIPTS_FOLDER, ROOT_FOLDER, driveConfigured, folderUrl } from "@/lib/drive";
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ error?: string; ok?: string }> }) {
   const me = await currentMember();
@@ -22,7 +22,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
     supabase.from("members").select("id, name, phone, roles, auth_id, crew_rate_until").order("name"),
     supabase.rpc("drive_status"),
   ]);
-  const driveRow = ((Array.isArray(driveRows) ? driveRows[0] : driveRows) ?? null) as { email: string; connected: boolean; connected_at: string; receipts_folder_id: string | null } | null;
+  const driveRow = ((Array.isArray(driveRows) ? driveRows[0] : driveRows) ?? null) as { email: string; connected: boolean; connected_at: string; receipts_folder_id: string | null; kvitton_folder_id: string | null } | null;
   const drive = driveRow?.connected ? driveRow : null;
   const googleReady = driveConfigured();
   const teachers = (members ?? []).filter((m) => hasRole(m, "teacher"));
@@ -44,7 +44,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
 
         <div className="card stack" style={{ padding: 18 }} id="drive">
           <h2>Google Drive</h2>
-          <div className="muted small">Approved receipts are copied to the association&apos;s Drive, folder &ldquo;{ROOT_FOLDER} / {RECEIPTS_FOLDER}&rdquo;. Connect once, signed in as <b>{DRIVE_ACCOUNT}</b>. The app can only see the files it puts there.</div>
+          <div className="muted small">Approved receipts to pay back go to the association&apos;s Drive, folder &ldquo;{ROOT_FOLDER} / {RECEIPTS_FOLDER}&rdquo;; the receipts (kvitton) members get for what they paid go to &ldquo;{ROOT_FOLDER} / {KVITTON_FOLDER}&rdquo;. Connect once, signed in as <b>{DRIVE_ACCOUNT}</b>. The app can only see the files it puts there.</div>
           {!googleReady ? (
             <div className="notice">Not set up yet — add <span className="mono">GOOGLE_CLIENT_ID</span> and <span className="mono">GOOGLE_CLIENT_SECRET</span> in Vercel (see README → Google Drive), then redeploy.</div>
           ) : drive ? (
@@ -52,6 +52,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
               <div className="small">Connected as <b>{drive.email}</b> since {shortDay(drive.connected_at.slice(0, 10))}{drive.email !== DRIVE_ACCOUNT ? <span className="err-text"> — not {DRIVE_ACCOUNT}</span> : null}.</div>
               <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
                 {drive.receipts_folder_id && <a href={folderUrl(drive.receipts_folder_id)} target="_blank" rel="noopener noreferrer" className="btn line sm">Open the Receipts folder</a>}
+                {drive.kvitton_folder_id && <a href={folderUrl(drive.kvitton_folder_id)} target="_blank" rel="noopener noreferrer" className="btn line sm">Open the Kvitton folder</a>}
                 <a href="/api/google/connect" className="btn quiet sm">Reconnect</a>
                 <form action={disconnectDrive}><SubmitButton className="btn quiet sm" pendingText="Disconnecting…">Disconnect</SubmitButton></form>
               </div>
@@ -60,6 +61,17 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
             <div className="row"><a href="/api/google/connect" className="btn ink sm">Connect Google Drive</a></div>
           )}
         </div>
+
+        <form action={updateOrgSettings} className="card stack" style={{ padding: 18 }} id="receipts">
+          <h2>Receipts (kvitton)</h2>
+          <div className="muted small">Printed on every receipt a member gets for a paid seat, pass or Store order — and kept as it was on receipts already issued. See them under Payments → Kvitton.</div>
+          <div><label htmlFor="on">Association name on the receipt</label><input id="on" name="org_name" required defaultValue={settings?.org_name ?? "Minhwa Association"} /></div>
+          <div><label htmlFor="onr">Organisation number (org.nr)</label><input id="onr" name="org_number" placeholder="802XXX-XXXX" defaultValue={settings?.org_number ?? ""} /></div>
+          <div><label htmlFor="oad">Address <span style={{ opacity: 0.7 }}>(one line per row)</span></label><textarea id="oad" name="org_address" rows={2} defaultValue={settings?.org_address ?? ""} placeholder={"Storgatan 1\n111 22 Stockholm"} /></div>
+          <div><label htmlFor="oem">E-mail on the receipt</label><input id="oem" name="org_email" type="email" defaultValue={settings?.org_email ?? "manager@minhwa.org"} /></div>
+          <div><label htmlFor="rn">Note at the bottom <span style={{ opacity: 0.7 }}>(VAT etc.)</span></label><textarea id="rn" name="receipt_note" rows={2} defaultValue={settings?.receipt_note ?? ""} /></div>
+          <button className="btn ink">Save receipt details</button>
+        </form>
 
         <form action={updateSettings} className="card stack" style={{ padding: 18 }}>
           <h2>Booking & Swish</h2>

@@ -28,7 +28,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
   if (!mine && !canUsePayments(me)) notFound();
   const lines = (items ?? []) as OrderItem[];
   const batchIds = [...new Set(lines.map((l) => l.batch_id).filter((x): x is string => !!x))];
-  const [{ data: payment }, { data: batchRows }, balance] = await Promise.all([
+  const [{ data: payment }, { data: batchRows }, balance, { data: receiptRow }] = await Promise.all([
     o.payment_id
       ? supabase.from("payments").select("id, code, note, amount_sek, status, credit_sek, credit_returned_sek").eq("id", o.payment_id).single()
       : Promise.resolve({ data: null }),
@@ -36,7 +36,10 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
       ? supabase.from("group_orders_public").select("*").in("id", batchIds)
       : Promise.resolve({ data: [] as BatchPublic[] }),
     mine ? balanceOf(supabase, me.id) : Promise.resolve(0),
+    // v17: the receipt, once the payment is confirmed
+    o.payment_id ? supabase.from("sales_receipts").select("id, number").eq("payment_id", o.payment_id).is("voided_at", null).maybeSingle() : Promise.resolve({ data: null }),
   ]);
+  const receipt = receiptRow as { id: string; number: string } | null;
   const batchById = new Map(((batchRows ?? []) as BatchPublic[]).map((b) => [b.id, b]));
   const lineStatus = (l: OrderItem) => {
     if (l.status === "group_buy" && l.batch_id && batchById.get(l.batch_id)) {
@@ -141,6 +144,7 @@ export default async function OrderPage({ params, searchParams }: { params: Prom
             </form>
           </>
         )}
+        {receipt && <Link href={`/receipt/${receipt.id}?from=order&o=${o.id}`} className="btn line">Receipt {receipt.number}</Link>}
         {(!unpaid || !mine) && <Link href={mine ? "/store" : "/store/admin"} className="btn ink">{mine ? "Back to the Store" : "Back to Manage store"}</Link>}
       </div>
     </main>

@@ -1,16 +1,19 @@
 /**
- * Google Drive — the association's copy of approved receipts (v16.4).
+ * Google Drive — the association's copies (v16.4 receipts to pay back, v17 kvitton).
  *
  * The admin connects once in Settings, signed in as manager@minhwa.org (OAuth, "drive.file": the app may only
  * touch files and folders it made itself). Google's lasting key (refresh token) is kept in drive_connection,
  * encrypted here with a key made from GOOGLE_CLIENT_SECRET. Approving a receipt saves its files to
- * "Minhwa — Bokföring / Receipts"; declining moves them to Drive's bin.
+ * "Minhwa — Bokföring / Receipts"; declining moves them to Drive's bin. A payment becoming "Paid" puts the
+ * member's receipt (kvitto) as a PDF in "Minhwa — Bokföring / Kvitton".
  *
  * Server only — never import this from a client component.
  */
 import crypto from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { RECEIPTS_BUCKET, type ClaimRow } from "@/lib/claims";
+import { RECEIPT_SELECT, receiptFileName as kvittoFileName, type SalesReceipt } from "@/lib/receipts";
+import { receiptPdf } from "@/lib/receipt-pdf";
 
 // GOOGLE_TEST_ORIGIN points everything at a fake Google — for tests only; never set it in Vercel.
 const TEST = process.env.GOOGLE_TEST_ORIGIN;
@@ -23,6 +26,7 @@ export const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 export const DRIVE_ACCOUNT = "manager@minhwa.org";
 export const ROOT_FOLDER = "Minhwa — Bokföring";
 export const RECEIPTS_FOLDER = "Receipts";
+export const KVITTON_FOLDER = "Kvitton";
 const FOLDER_TYPE = "application/vnd.google-apps.folder";
 
 export class DriveError extends Error {}
@@ -137,21 +141,24 @@ async function makeFolder(token: string, name: string, parent?: string): Promise
   return body.id;
 }
 
-/** "Minhwa — Bokföring / Receipts" — the ones we know if they still exist, otherwise new ones */
-export async function ensureFolders(token: string, root?: string | null, receipts?: string | null): Promise<{ root: string; receipts: string; changed: boolean }> {
+export type Folders = { root: string; receipts: string; kvitton: string; changed: boolean };
+
+/** "Minhwa — Bokföring / Receipts" and "/ Kvitton" — the ones we know if they still exist, otherwise new ones */
+export async function ensureFolders(token: string, root?: string | null, receipts?: string | null, kvitton?: string | null): Promise<Folders> {
   let changed = false;
-  let r = root ?? null, rc = receipts ?? null;
-  if (!(await folderAlive(token, r))) { r = await makeFolder(token, ROOT_FOLDER); rc = null; changed = true; }
+  let r = root ?? null, rc = receipts ?? null, kv = kvitton ?? null;
+  if (!(await folderAlive(token, r))) { r = await makeFolder(token, ROOT_FOLDER); rc = null; kv = null; changed = true; }
   if (!(await folderAlive(token, rc))) { rc = await makeFolder(token, RECEIPTS_FOLDER, r!); changed = true; }
-  return { root: r!, receipts: rc!, changed };
+  if (!(await folderAlive(token, kv))) { kv = await makeFolder(token, KVITTON_FOLDER, r!); changed = true; }
+  return { root: r!, receipts: rc!, kvitton: kv!, changed };
 }
 
-async function uploadFile(token: string, name: string, parent: string, bytes: Buffer, contentType: string, description: string): Promise<string> {
+async function uploadFile(token: string, name: string, parent: string, bytes: Buffer | Uint8Array, contentType: string, description: string): Promise<string> {
   const boundary = `minhwa${crypto.randomBytes(8).toString("hex")}`;
   const meta = JSON.stringify({ name, parents: [parent], description });
   const body = Buffer.concat([
     Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${boundary}\r\nContent-Type: ${contentType}\r\n\r\n`, "utf8"),
-    bytes,
+    Buffer.from(bytes),
     Buffer.from(`\r\n--${boundary}--\r\n`, "utf8"),
   ]);
   const { body: j } = await gjson<{ id: string }>(token, `${UPLOAD}/files?uploadType=multipart&fields=id`, {
@@ -159,6 +166,20 @@ async function uploadFile(token: string, name: string, parent: string, bytes: Bu
   });
   if (!j?.id) throw new DriveError("Google Drive did not take the file.");
   return j.id;
+}
+
+/** replace the bytes of a file we put there; false when it is gone or in the bin */
+async function updateFile(token: string, id: string, name: string, bytes: Buffer | Uint8Array, contentType: string): Promise<boolean> {
+  const boundary = `minhwa${crypto.randomBytes(8).toString("hex")}`;
+  const body = Buffer.concat([
+    Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({ name })}\r\n--${boundary}\r\nContent-Type: ${contentType}\r\n\r\n`, "utf8"),
+    Buffer.from(bytes),
+    Buffer.from(`\r\n--${boundary}--\r\n`, "utf8"),
+  ]);
+  const { status, body: j } = await gjson<{ trashed?: boolean }>(token, `${UPLOAD}/files/${encodeURIComponent(id)}?uploadType=multipart&fields=id,trashed`, {
+    method: "PATCH", headers: { "Content-Type": `multipart/related; boundary=${boundary}` }, body,
+  });
+  return status !== 404 && !j?.trashed;
 }
 
 /** rename a file we put there; false when it is gone or in the bin */
@@ -175,7 +196,30 @@ async function trashFile(token: string, id: string): Promise<void> {
   });
 }
 
-// ───────────── receipts ─────────────
+// ───────────── the connection ─────────────
+export type DriveResult = { state: "saved" | "off" | "failed"; saved: number; message?: string };
+
+type Conn = { email: string; token_enc: string; root_folder_id: string | null; receipts_folder_id: string | null; kvitton_folder_id: string | null };
+
+/** The lasting key turned into a fresh access token, and the folders. Works for the treasurer/admin's own
+ *  client and for the app's service client (a member paying with credits confirms with no treasurer around). */
+async function connection(supabase: SupabaseClient): Promise<{ token: string; folders: Folders } | null> {
+  if (!driveConfigured()) return null;
+  const { data } = await supabase.rpc("drive_token");
+  const conn = (Array.isArray(data) ? data[0] : data) as Conn | undefined;
+  if (!conn) return null;
+  const refresh = openToken(conn.token_enc);
+  if (!refresh) throw new DriveError("The saved Google connection can't be read (the Google secret changed?) — reconnect Google Drive in Settings.");
+  const token = await accessToken(refresh);
+  const folders = await ensureFolders(token, conn.root_folder_id, conn.receipts_folder_id, conn.kvitton_folder_id);
+  if (folders.changed) {
+    const { error } = await supabase.rpc("drive_set_folders", { p_root: folders.root, p_receipts: folders.receipts, p_kvitton: folders.kvitton });
+    if (error) throw new DriveError(error.message);
+  }
+  return { token, folders };
+}
+
+// ───────────── receipts to pay back (v16.4) ─────────────
 const CATEGORY_WORD: Record<string, string> = {
   material: "Material", venue: "Venue", fika: "Fika", fee: "Fee", other: "Other", loan: "Loan",
   membership: "Membership", course: "Course", seat: "Seat", material_sale: "Material sale", grant: "Grant",
@@ -203,26 +247,6 @@ export function receiptFileName(c: DriveClaim, f: Pick<DriveFile, "filename" | "
   const ext = (fromName === ".jpeg" ? ".jpg" : fromName) ?? EXT[f.content_type ?? ""] ?? "";
   const base = `${day} ${c.code} ${word} — ${who} ${amount} kr${count > 1 && index > 0 ? ` (${index + 1})` : ""}`;
   return base.replace(/[\\/:*?"<>|\u0000-\u001f]/g, "-").replace(/\s+/g, " ").trim() + ext;
-}
-
-export type DriveResult = { state: "saved" | "off" | "failed"; saved: number; message?: string };
-
-type Conn = { email: string; token_enc: string; root_folder_id: string | null; receipts_folder_id: string | null };
-
-async function connection(supabase: SupabaseClient): Promise<{ token: string; folders: { root: string; receipts: string } } | null> {
-  if (!driveConfigured()) return null;
-  const { data } = await supabase.rpc("drive_token");
-  const conn = (Array.isArray(data) ? data[0] : data) as Conn | undefined;
-  if (!conn) return null;
-  const refresh = openToken(conn.token_enc);
-  if (!refresh) throw new DriveError("The saved Google connection can't be read (the Google secret changed?) — reconnect Google Drive in Settings.");
-  const token = await accessToken(refresh);
-  const folders = await ensureFolders(token, conn.root_folder_id, conn.receipts_folder_id);
-  if (folders.changed) {
-    const { error } = await supabase.rpc("drive_set_folders", { p_root: folders.root, p_receipts: folders.receipts });
-    if (error) throw new DriveError(error.message);
-  }
-  return { token, folders };
 }
 
 /** Approved or paid receipt → its files in Drive (new ones uploaded, ones already there renamed). */
@@ -275,5 +299,74 @@ export async function removeClaimFromDrive(supabase: SupabaseClient, claimId: st
     }
   } catch (e) {
     console.error(`[drive] remove ${claimId}: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
+// ───────────── kvitton (v17) ─────────────
+/** One receipt's PDF into "Minhwa — Bokföring / Kvitton". Already there → the file is written again under its
+ *  current name (so a void shows in Drive too). */
+async function putReceipt(supabase: SupabaseClient, conn: { token: string; folders: Folders }, r: SalesReceipt): Promise<"uploaded" | "updated"> {
+  const pdf = await receiptPdf(r);
+  const name = kvittoFileName(r);
+  if (r.drive_file_id && (await updateFile(conn.token, r.drive_file_id, name, pdf, "application/pdf"))) return "updated";
+  const desc = `${r.number} · ${r.member_name} · ${r.title} · ${r.description}${r.payment_code ? ` · ${r.payment_code}` : ""} · issued by app.minhwa.org`;
+  const id = await uploadFile(conn.token, name, conn.folders.kvitton, pdf, "application/pdf", desc);
+  const { error } = await supabase.rpc("sales_receipt_in_drive", { p_id: r.id, p_drive_id: id });
+  if (error) throw new DriveError(error.message);
+  return "uploaded";
+}
+
+/** This receipt → Drive (again). "Save to Drive" on Payments → Kvitton. */
+export async function saveSalesReceiptToDrive(supabase: SupabaseClient, receiptId: string): Promise<DriveResult> {
+  try {
+    const conn = await connection(supabase);
+    if (!conn) return { state: "off", saved: 0 };
+    const { data, error } = await supabase.from("sales_receipts").select(RECEIPT_SELECT).eq("id", receiptId).single();
+    if (error || !data) throw new DriveError(error?.message ?? "Receipt not found");
+    await putReceipt(supabase, conn, data as SalesReceipt);
+    return { state: "saved", saved: 1 };
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error(`[drive] kvitto ${receiptId}: ${message}`);
+    return { state: "failed", saved: 0, message };
+  }
+}
+
+/**
+ * Every receipt not yet in Drive → Drive, and every receipt made void since it went there → written again
+ * with the VOID stamp. Called after a confirmation (in the background) and from Payments → Kvitton.
+ * Best effort: one failure does not stop the others; the result says how many went.
+ */
+export async function syncSalesReceiptsToDrive(supabase: SupabaseClient): Promise<DriveResult> {
+  try {
+    const conn = await connection(supabase);
+    if (!conn) return { state: "off", saved: 0 };
+    const [{ data: missing, error: e1 }, { data: voided, error: e2 }] = await Promise.all([
+      supabase.from("sales_receipts").select(RECEIPT_SELECT).is("drive_file_id", null).order("issued_at").limit(50),
+      supabase.from("sales_receipts").select(RECEIPT_SELECT).not("drive_file_id", "is", null).not("voided_at", "is", null).order("voided_at").limit(50),
+    ]);
+    if (e1) throw new DriveError(e1.message);
+    if (e2) throw new DriveError(e2.message);
+    let saved = 0;
+    let lastError: string | undefined;
+    for (const r of (missing ?? []) as SalesReceipt[]) {
+      try { await putReceipt(supabase, conn, r); saved++; }
+      catch (e) { lastError = e instanceof Error ? e.message : String(e); console.error(`[drive] kvitto ${r.number}: ${lastError}`); }
+    }
+    // a void after the upload: the file in Drive gets the stamp (only when it was voided after it was saved)
+    for (const r of (voided ?? []) as SalesReceipt[]) {
+      if (!r.drive_saved_at || !r.voided_at || Date.parse(r.voided_at) <= Date.parse(r.drive_saved_at)) continue;
+      try {
+        await putReceipt(supabase, conn, r);
+        const { error } = await supabase.rpc("sales_receipt_in_drive", { p_id: r.id, p_drive_id: r.drive_file_id });   // drive_saved_at = now → done
+        if (error) throw new DriveError(error.message);
+        saved++;
+      } catch (e) { lastError = e instanceof Error ? e.message : String(e); console.error(`[drive] kvitto void ${r.number}: ${lastError}`); }
+    }
+    return lastError && saved === 0 ? { state: "failed", saved, message: lastError } : { state: "saved", saved, message: lastError };
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error(`[drive] kvitton sync: ${message}`);
+    return { state: "failed", saved: 0, message };
   }
 }

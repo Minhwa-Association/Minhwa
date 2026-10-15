@@ -4,7 +4,7 @@ Weekly seat board + Swish payment for the Minhwa Association. Next.js 15 · Supa
 
 ## 1. Supabase
 1. Create a new project (region: EU / Stockholm).
-2. SQL Editor → run `sql/schema_v1.sql`, then the migrations in order (`migration_v2` … `migration_v15`).
+2. SQL Editor → run `sql/schema_v1.sql`, then the migrations in order (`migration_v2` … `migration_v17`).
 3. Authentication → Providers → **Phone** → enable, choose **Twilio**, paste Account SID, Auth Token and Message Service SID (or a sender number / alphanumeric sender "Minhwa").
 4. Authentication → URL configuration → Site URL = your Vercel URL (later).
 5. Project Settings → API → copy **Project URL** and **anon public** key.
@@ -79,6 +79,17 @@ When the treasurer **approves** a receipt, its files are copied to the associati
 5. In the app: Admin → Settings → **Google Drive → Connect Google Drive** → sign in as manager@minhwa.org → Allow. The folders are made at once.
 
 The lasting key is kept in `drive_connection`, encrypted with a key made from `GOOGLE_CLIENT_SECRET` (changing the secret means connecting again). `GOOGLE_TEST_ORIGIN` exists only for tests (a fake Google) — never set it in Vercel.
+
+## Kvitton — a receipt for every payment (v17)
+The moment a payment becomes **Paid** — the treasurer confirms a Swish payment (by hand, from a bank line, or "Confirm matched"), or a member's credits cover the whole amount — the database makes a **receipt** (`sales_receipts`, trigger `payments_sales_receipt` → `issue_sales_receipt`). Seats, monthly passes and Store orders alike. The row is a snapshot (what, who, amounts, the association's details from `settings`) and never changes; numbers run **K2026-0001, 0002 …** in the order they are issued, one series per year, no gaps (`sales_receipt_counters`). "Undo" on a confirmation makes the receipt **void** (annullerad — the number stays taken, the PDF gets a stamp); confirming again issues a new one. A refund does not void a receipt (the money did come in). Paid partly or wholly with credits: the receipt says "Credits · N kr" and where they came from (the latest returns/grants before the spend — `credit_source`) — until then the credits were the association's debt to the member. If making the receipt fails, the confirmation still stands; Payments → Kvitton has "Issue missing receipts" (`issue_missing_sales_receipts`). Running the migration gave every already-confirmed payment its receipt.
+
+**Members** see each receipt under My seats → **Payments** (`/me/payments`) and on the paid seat / pass / order page ("Receipt K2026-0012"): `/receipt/[id]` shows it, **Open / Download PDF** (`/api/receipt/[id]/pdf`, drawn with pdf-lib from the stored row — RLS: own receipts only). Nothing is e-mailed. The **treasurer** sees them all under Payments → **Kvitton** with the Drive state, "Save to Drive" per receipt and "Save N to Drive" for the rest; "Confirmed recently" on Payments links each payment's receipt number.
+
+**Google Drive**: after every confirmation the app (with its own key, `SUPABASE_SERVICE_ROLE_KEY`, in the background) puts each new receipt's PDF in **Minhwa — Bokföring / Kvitton** as `2026-10-15 K2026-0012 Painting session — Rock 100 kr.pdf` (`syncSalesReceiptsToDrive`; a void after the upload writes the file again with the stamp). The PDF a member downloads and the one in Drive are the same bytes. The Kvitton folder is made on connect (existing connections get it on the next save); `drive_token()` answers the service role as well as the treasurer.
+
+**Settings → Receipts (kvitton)**: name, organisation number, address, e-mail and the note at the bottom (today: "not registered for VAT — no VAT is included") — fill these in before the first real receipt; receipts already issued keep what they were printed with.
+
+**PDF fonts**: `lib/fonts/MinhwaSansKR-*.ttf` — Noto Sans KR cut down to Latin + Hangul (see `lib/fonts/README.md`); `next.config.mjs` → `outputFileTracingIncludes` packs them into every server function on Vercel.
 
 ## Credits (v14)
 Crew help with the association's activities and get **credits instead of pay**: 1 credit = 1 kr, no expiry. The treasurer gives them in Payments → Credits (`give_credits`: member, amount, what for, optionally the Calendar activity). Everything is a row in `credit_movements` — `grant` (+) · `spend` (−, on a payment) · `return` (+, cancelled / refunded) · `adjust` (±, a correction with a reason); the balance is the sum (`credit_balances`, `my_credits()`) and can never go below 0. A grant is taken back with `void_credits` only while the member still has the credits.

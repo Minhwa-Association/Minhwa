@@ -29,13 +29,17 @@ export async function GET(req: NextRequest) {
     const supabase = await createClient();
     // same account as before → keep (or remake) the same folders
     const { data: prev } = await supabase.rpc("drive_status");
-    const old = (Array.isArray(prev) ? prev[0] : prev) as { email: string; root_folder_id: string | null; receipts_folder_id: string | null } | undefined;
+    const old = (Array.isArray(prev) ? prev[0] : prev) as { email: string; root_folder_id: string | null; receipts_folder_id: string | null; kvitton_folder_id: string | null } | undefined;
     const same = !!old && !!email && old.email === email.toLowerCase();
-    const folders = await ensureFolders(accessToken, same ? old!.root_folder_id : null, same ? old!.receipts_folder_id : null);
+    const folders = await ensureFolders(accessToken, same ? old!.root_folder_id : null, same ? old!.receipts_folder_id : null, same ? old!.kvitton_folder_id : null);
     const { error } = await supabase.rpc("drive_connect", { p_email: email ?? "unknown", p_token_enc: sealToken(refreshToken), p_root: folders.root, p_receipts: folders.receipts });
     if (error) throw new DriveError(error.message);
+    // v17: the Kvitton folder goes next to the other two
+    const { error: e2 } = await supabase.rpc("drive_set_folders", { p_root: folders.root, p_receipts: folders.receipts, p_kvitton: folders.kvitton });
+    if (e2) throw new DriveError(e2.message);
     revalidatePath("/admin/settings");
     revalidatePath("/payments/receipts");
+    revalidatePath("/payments/kvitton");
     return back("ok", "drive_connected");
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

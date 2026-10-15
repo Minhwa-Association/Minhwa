@@ -204,6 +204,10 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
         })}
         <div className="muted small">Cancelling is free until {deadline} day{deadline === 1 ? "" : "s"} before the session — what you paid comes back as credits (1 credit = 1 kr). A seat that came to you from the waiting list can be declined any time before you pay.</div>
         <div className="card row between" style={{ padding: "12px 16px", flexWrap: "wrap", gap: 8 }}>
+          <div className="small"><b>My payments</b><span className="muted"> · what you paid, with a receipt (kvitto) for each — open or save as PDF.</span></div>
+          <Link href="/me/payments" className="btn line sm">Payments</Link>
+        </div>
+        <div className="card row between" style={{ padding: "12px 16px", flexWrap: "wrap", gap: 8 }}>
           <div className="small"><b>Receipts</b><span className="muted"> · paid for something for the association? Send the receipt and get it back.</span></div>
           <Link href="/me/receipts" className="btn line sm">Receipts</Link>
         </div>

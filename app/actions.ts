@@ -11,7 +11,7 @@ import { MAX_PHOTOS, PHOTO_BUCKET, thumbPath } from "@/lib/store";
 import { after } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { finishClaim } from "@/lib/claims-process";
-import { removeClaimFromDrive, saveClaimToDrive } from "@/lib/drive";
+import { removeClaimFromDrive, saveClaimToDrive, saveSalesReceiptToDrive, syncSalesReceiptsToDrive } from "@/lib/drive";
 
 function backWithError(path: string, message: string): never {
   const sep = path.includes("?") ? "&" : "?";
@@ -143,9 +143,23 @@ export async function claimPayment(formData: FormData) {
 
 function refreshPayments() {
   revalidatePath("/payments");
+  revalidatePath("/payments/kvitton");
   revalidatePath("/admin");
   revalidatePath("/me");
+  revalidatePath("/me/payments");
   revalidatePath("/");
+}
+
+/**
+ * v17: a payment that just became "Paid" has a receipt (the database made it) — put its PDF in the
+ * association's Drive once the answer has gone out. The app's own key does it, so it works whether a
+ * treasurer confirmed or a member's credits did. Best effort: Payments → Kvitton shows what is not there yet.
+ */
+function kvittonToDrive() {
+  after(async () => {
+    try { await syncSalesReceiptsToDrive(createServiceClient()); }
+    catch (e) { console.error("kvitton → drive", e instanceof Error ? e.message : e); }
+  });
 }
 
 async function treasurer() {
@@ -164,6 +178,7 @@ export async function confirmPayment(formData: FormData) {
   const supabase = await createClient();
   const { error } = await supabase.rpc("confirm_payment", { p_payment_id: paymentId, p_tx_id: txId });
   if (error) backWithError(back, error.message);
+  kvittonToDrive();
   refreshPayments();
   redirect(withOk(back, "confirmed"));
 }
@@ -185,6 +200,7 @@ export async function confirmMatched() {
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("confirm_matched");
   if (error) backWithError("/payments", error.message);
+  kvittonToDrive();
   refreshPayments();
   redirect(`/payments?ok=confirmed_all&n=${Number(data) || 0}`);
 }
@@ -209,6 +225,7 @@ export async function attachTransaction(formData: FormData) {
   const supabase = await createClient();
   const { error } = await supabase.rpc("confirm_payment", { p_payment_id: paymentId, p_tx_id: txId });
   if (error) backWithError("/payments", error.message);
+  kvittonToDrive();
   refreshPayments();
   redirect("/payments?ok=confirmed");
 }
@@ -239,6 +256,7 @@ export async function undoConfirmation(formData: FormData) {
   const supabase = await createClient();
   const { error } = await supabase.rpc("undo_confirmation", { p_payment_id: paymentId });
   if (error) backWithError("/payments", error.message);
+  kvittonToDrive();   // the receipt is void now — its copy in Drive gets the stamp
   refreshPayments();
   redirect("/payments?ok=undone");
 }
@@ -283,6 +301,7 @@ export async function placeOrder(formData: FormData) {
   const useCredits = formData.get("use_credits") === "on";
   const { data, error } = await supabase.rpc("place_order", { p_items: items, p_note: note, p_use_credits: useCredits });
   if (error) backWithError("/store", error.message);
+  if (useCredits) kvittonToDrive();   // credits covering the whole order = paid → a receipt
   revalidatePath("/store");
   revalidatePath("/store/orders");
   revalidatePath("/payments");
@@ -656,6 +675,60 @@ export async function updatePassSettings(formData: FormData) {
   redirect("/admin/settings?ok=saved");
 }
 
+/** Admin: what the receipt says about the association (v17). */
+export async function updateOrgSettings(formData: FormData) {
+  const me = await currentMember();
+  if (!me || !hasRole(me, "admin")) redirect("/");
+  const t = (key: string) => String(formData.get(key) ?? "").replace(/\r\n/g, "\n").trim();
+  if (!t("org_name")) backWithError("/admin/settings", "The association's name can't be empty.");
+  const supabase = await createClient();
+  const { error } = await supabase.from("settings").update({
+    org_name: t("org_name"),
+    org_number: t("org_number"),
+    org_address: t("org_address"),
+    org_email: t("org_email"),
+    receipt_note: t("receipt_note"),
+  }).eq("id", 1);
+  if (error) backWithError("/admin/settings", error.message);
+  revalidatePath("/admin/settings");
+  redirect("/admin/settings?ok=org_saved");
+}
+
+/** Treasurer: this receipt's PDF into Google Drive (again) — "Save to Drive" on Payments → Kvitton. */
+export async function saveReceiptDrive(formData: FormData) {
+  await treasurer();
+  const receiptId = String(formData.get("receipt_id"));
+  const back = safeBack(formData, KVITTON);
+  const supabase = await createClient();
+  const drive = await saveSalesReceiptToDrive(supabase, receiptId);
+  refreshPayments();
+  if (drive.state === "off") backWithError(back, "Google Drive is not connected — an admin connects it in Settings → Google Drive.");
+  if (drive.state === "failed") backWithError(back, `Could not save to Google Drive: ${drive.message ?? "unknown error"}`);
+  redirect(withOk(back, "kvitto_saved"));
+}
+
+/** Treasurer: every receipt not in Drive yet → Drive, now, with the answer. */
+export async function syncKvitton() {
+  await treasurer();
+  const supabase = await createClient();
+  const drive = await syncSalesReceiptsToDrive(supabase);
+  refreshPayments();
+  if (drive.state === "off") backWithError(KVITTON, "Google Drive is not connected — an admin connects it in Settings → Google Drive.");
+  if (drive.state === "failed") backWithError(KVITTON, `Could not save to Google Drive: ${drive.message ?? "unknown error"}`);
+  redirect(`${KVITTON}?ok=kvitton_synced&n=${drive.saved}${drive.message ? `&note=${encodeURIComponent(drive.message)}` : ""}`);
+}
+
+/** Treasurer: confirmed payments that have no receipt (after a failure) get one. */
+export async function issueMissingReceipts() {
+  await treasurer();
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("issue_missing_sales_receipts");
+  if (error) backWithError(KVITTON, error.message);
+  kvittonToDrive();
+  refreshPayments();
+  redirect(`${KVITTON}?ok=kvitton_issued&n=${Number(data) || 0}`);
+}
+
 export async function setInstructor(formData: FormData) {
   const me = await currentMember();
   if (!me || !hasRole(me, "admin")) redirect("/");
@@ -712,6 +785,7 @@ export async function addMember(formData: FormData) {
 // ---- receipts: members' expense claims -------------------------------------------
 
 const RECEIPTS = "/payments/receipts";
+const KVITTON = "/payments/kvitton";
 const MY_RECEIPTS = "/me/receipts";
 
 function refreshReceipts() {
@@ -981,6 +1055,7 @@ export async function applyCredits(formData: FormData) {
   const supabase = await createClient();
   const { data, error } = await supabase.rpc("apply_credits", { p_payment_id: String(formData.get("payment_id")) });
   if (error) backWithError(back, error.message);
+  kvittonToDrive();   // credits covering everything = paid → a receipt
   refreshCredits();
   redirect(`${back}${back.includes("?") ? "&" : "?"}ok=credits_used&c=${Number(data ?? 0)}`);
 }

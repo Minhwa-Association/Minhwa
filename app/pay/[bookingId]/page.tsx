@@ -22,10 +22,13 @@ export default async function PayPage({ params, searchParams }: { params: Promis
     .select("id, date, member_id, status, promoted_at, slot:slots(id, session, start_time, end_time, weekday, capacity, instructor:members!slots_instructor_id_fkey(name)), payment:payments(id, code, amount_sek, status, note, credit_sek, credit_returned_sek)")
     .eq("id", bookingId).single();
   if (!b || b.member_id !== me.id) notFound();
-  const [{ data: settings }, balance] = await Promise.all([
+  const [{ data: settings }, balance, { data: receiptRow }] = await Promise.all([
     supabase.from("settings").select("swish_number, swish_payee_name").eq("id", 1).single(),
     balanceOf(supabase, me.id),
+    // v17: the receipt, once the payment is confirmed
+    b.payment ? supabase.from("sales_receipts").select("id, number").eq("payment_id", (b.payment as unknown as { id: string }).id).is("voided_at", null).maybeSingle() : Promise.resolve({ data: null }),
   ]);
+  const receipt = receiptRow as { id: string; number: string } | null;
 
   const slot = b.slot as unknown as { id: string; session: "day" | "evening"; start_time: string; end_time: string; capacity: number; instructor: { name: string } | null };
   // v16: a seat on the monthly pass has nothing to pay
@@ -119,6 +122,7 @@ export default async function PayPage({ params, searchParams }: { params: Promis
             <Link href={back} className="btn quiet">{fromWaitlist ? "Decide later" : "Hold the seat, pay later"}</Link>
           </>
         )}
+        {receipt && <Link href={`/receipt/${receipt.id}?from=pay&b=${b.id}`} className="btn line">Receipt {receipt.number}</Link>}
         {(confirmed || cancelled) && <Link href={back} className="btn ink">Back to {backLabel}</Link>}
       </div>
     </main>
