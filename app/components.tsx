@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { signOut } from "@/app/actions";
-import { canUseCalendar, canUsePayments, hasRole } from "@/lib/roles";
+import { canUseCalendar, canUseInbox, canUsePayments, hasRole } from "@/lib/roles";
 import { paymentLabel, paymentClass } from "@/lib/payments";
 
 export function Chevron({ dir }: { dir: "left" | "right" }) {
@@ -20,10 +20,10 @@ export function Check() {
   );
 }
 
-type Me = { roles?: string[] | null } | null | undefined;
+type Me = { roles?: string[] | null; inbox_access?: boolean | null } | null | undefined;
 
-/** Tabs follow the roles: everyone Board · My seats · Store; Crew/Admin + Calendar; Treasurer/Admin + Payments; Admin + Admin. */
-export function TopNav({ current, me }: { current: "board" | "me" | "store" | "calendar" | "payments" | "admin"; me: Me }) {
+/** Tabs follow the roles: everyone Board · My seats · Store; Crew/Admin + Calendar; Treasurer/Admin + Payments; Admin/Manager/Crew-with-access + Inbox; Admin + Admin. */
+export function TopNav({ current, me }: { current: "board" | "me" | "store" | "calendar" | "payments" | "inbox" | "admin"; me: Me }) {
   const pill = (key: typeof current) => `pill ${current === key ? "active" : ""}`;
   return (
     <nav className="nav" aria-label="Main">
@@ -32,6 +32,7 @@ export function TopNav({ current, me }: { current: "board" | "me" | "store" | "c
       <Link href="/store" className={pill("store")}>Store</Link>
       {canUseCalendar(me) && <Link href="/calendar" className={pill("calendar")}>Calendar</Link>}
       {canUsePayments(me) && <Link href="/payments" className={pill("payments")}>Payments</Link>}
+      {canUseInbox(me) && <Link href="/inbox" className={pill("inbox")}>Inbox</Link>}
       {hasRole(me, "admin") && <Link href="/admin" className={pill("admin")}>Admin</Link>}
       <form action={signOut}><button className="pill" style={{ cursor: "pointer" }}>Log out</button></form>
     </nav>

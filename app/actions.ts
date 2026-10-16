@@ -759,9 +759,10 @@ export async function setRoles(formData: FormData) {
   if (!me || !hasRole(me, "admin")) redirect("/");
   const memberId = String(formData.get("member_id"));
   const roles = cleanRoles(formData.getAll("roles"));
+  const inboxAccess = formData.get("inbox_access") === "1";
   if (memberId === me.id && !roles.includes("admin")) backWithError("/admin/settings", "You can't remove your own Admin role — ask another admin.");
   const supabase = await createClient();
-  const { error } = await supabase.from("members").update({ roles }).eq("id", memberId);
+  const { error } = await supabase.from("members").update({ roles, inbox_access: inboxAccess }).eq("id", memberId);
   if (error) backWithError("/admin/settings", error.message);
   revalidatePath("/admin/settings");
   redirect("/admin/settings?ok=saved");

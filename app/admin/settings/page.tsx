@@ -19,7 +19,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const [{ data: settings }, { data: slots }, { data: members }, { data: driveRows }] = await Promise.all([
     supabase.from("settings").select("*").eq("id", 1).single(),
     supabase.from("slots").select("id, weekday, session, instructor_id, whatsapp_url").order("weekday").order("session"),
-    supabase.from("members").select("id, name, phone, roles, auth_id, crew_rate_until").order("name"),
+    supabase.from("members").select("id, name, phone, roles, auth_id, crew_rate_until, inbox_access").order("name"),
     supabase.rpc("drive_status"),
   ]);
   const driveRow = ((Array.isArray(driveRows) ? driveRows[0] : driveRows) ?? null) as { email: string; connected: boolean; connected_at: string; receipts_folder_id: string | null; kvitton_folder_id: string | null } | null;
@@ -181,7 +181,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
 
         <div className="card stack" style={{ padding: 18 }}>
           <h2>Members</h2>
-          <div className="muted small">Everyone is a member. Tick any extra roles — one person can hold several. Teacher: can be set on a slot · Crew: prepares and runs activities (sees the Calendar) · Treasurer: the Payments tab (bank statement, confirmations) · Admin: this board and settings.</div>
+          <div className="muted small">Everyone is a member. Tick any extra roles — one person can hold several. Teacher: can be set on a slot · Crew: prepares and runs activities (sees the Calendar) · Treasurer: the Payments tab (bank statement, confirmations) · Manager: the Inbox (messages, mail, tasks) · Admin: this board and settings. &ldquo;Inbox&rdquo; lets a Crew member into the Inbox too.</div>
           {(members ?? []).map((m) => (
             <form key={m.id} action={setRoles} className="memberrow">
               <input type="hidden" name="member_id" value={m.id} />
@@ -190,6 +190,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
                 {ROLES.map((r) => (
                   <label key={r.key} className="check"><input type="checkbox" name="roles" value={r.key} defaultChecked={hasRole(m, r.key)} /> {r.label}</label>
                 ))}
+                <label className="check" title="A Crew member with this tick sees the Inbox tab"><input type="checkbox" name="inbox_access" value="1" defaultChecked={!!m.inbox_access} /> Inbox</label>
               </div>
               <button className="btn line sm">Set</button>
             </form>
