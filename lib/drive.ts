@@ -13,7 +13,6 @@ import crypto from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { RECEIPTS_BUCKET, type ClaimRow } from "@/lib/claims";
 import { RECEIPT_SELECT, receiptFileName as kvittoFileName, type SalesReceipt } from "@/lib/receipts";
-import { receiptPdf } from "@/lib/receipt-pdf";
 
 // GOOGLE_TEST_ORIGIN points everything at a fake Google — for tests only; never set it in Vercel.
 const TEST = process.env.GOOGLE_TEST_ORIGIN;
@@ -306,6 +305,9 @@ export async function removeClaimFromDrive(supabase: SupabaseClient, claimId: st
 /** One receipt's PDF into "Minhwa — Bokföring / Kvitton". Already there → the file is written again under its
  *  current name (so a void shows in Drive too). */
 async function putReceipt(supabase: SupabaseClient, conn: { token: string; folders: Folders }, r: SalesReceipt): Promise<"uploaded" | "updated"> {
+  // v19.3: the PDF maker (pdf-lib + fonts, ~1 MB) is loaded only here, when a receipt is actually made —
+  // not on every page start (every page's Log out button pulls in app/actions.ts, which imports this file)
+  const { receiptPdf } = await import("@/lib/receipt-pdf");
   const pdf = await receiptPdf(r);
   const name = kvittoFileName(r);
   if (r.drive_file_id && (await updateFile(conn.token, r.drive_file_id, name, pdf, "application/pdf"))) return "updated";
