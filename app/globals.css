@@ -323,3 +323,12 @@ select.sm, input.sm { min-height: 28px; font-size: 13px; padding: 0 6px; }
   .msg { max-width: 95%; }
   .tmplrow { grid-template-columns: minmax(0, 1fr) auto auto; }
 }
+
+/* loading screen (v19.3) — app/loading.tsx */
+.skel { display: block; background: var(--divider); border-radius: 8px; }
+.skel-pill { height: 36px; border-radius: 999px; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .skel { animation: skel-pulse 1.2s ease-in-out infinite; }
+}
+@keyframes skel-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
