@@ -3,7 +3,7 @@
 Weekly seat board + Swish payment for the Minhwa Association. Next.js 15 · Supabase (phone login) · Vercel.
 
 ## 1. Supabase
-1. Create a new project (region: EU / Stockholm).
+1. Create a new project. (This project's database is in **EU West / Ireland**, eu-west-1 — the app's functions run next to it, see 3.)
 2. SQL Editor → run `sql/schema_v1.sql`, then the migrations in order (`migration_v2` … `migration_v17`).
 3. Authentication → Providers → **Phone** → enable, choose **Twilio**, paste Account SID, Auth Token and Message Service SID (or a sender number / alphanumeric sender "Minhwa").
 4. Authentication → URL configuration → Site URL = your Vercel URL (later).
@@ -20,6 +20,8 @@ Log in with your own phone once, then run `sql/make_admin.sql` (with your phone)
 ## 3. Deploy
 Push to GitHub (`Minhwa-Association/Minhwa`), import into Vercel, add the two env variables, deploy.
 Then set the Vercel URL as Site URL in Supabase Auth.
+
+**Region (v19.3):** `vercel.json` pins the server functions to Dublin (`dub1`), next to the database in Ireland. Every page asks the database 3–6 times in a row, so a function far from it (Vercel's default is Washington, `iad1`) makes every page slow. If the database ever moves, change the region there to match.
 
 ### Receipts by e-mail (v13) — extra setup
 The app takes in members' receipts mailed to `receipt@minhwa.org` (an alias of `manager@minhwa.org`, Microsoft 365).
