@@ -59,6 +59,28 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
       </main>
     );
   }
+  // v19.2: seats and waiting-list places a holiday cancelled, from today on (read errors ignored: before the
+  // v19.2 SQL is run the column isn't there, and nothing would show anyway)
+  const [{ data: holidaySeatRows }, { data: holidayWaitRows }] = await Promise.all([
+    supabase.from("bookings")
+      .select("id, date, pass_id, closure:closures(reason), slot:slots(session), payment:payments(status, credited_sek, credit_returned_sek)")
+      .eq("member_id", me.id).eq("status", "cancelled").not("closure_id", "is", null).gte("date", todayISO).order("date"),
+    supabase.from("waitlist")
+      .select("id, date, closure:closures(reason), slot:slots(session)")
+      .eq("member_id", me.id).eq("status", "left").not("closure_id", "is", null).gte("date", todayISO).order("date"),
+  ]);
+  type HolidayRow = { id: string; date: string; pass_id?: string | null; closure: { reason: string } | null; slot: { session: "day" | "evening" } | null; payment?: { status: string; credited_sek: number | null; credit_returned_sek: number | null } | null; waiting?: boolean };
+  const holidayRows: HolidayRow[] = [
+    ...((holidaySeatRows ?? []) as unknown as HolidayRow[]),
+    ...((holidayWaitRows ?? []) as unknown as HolidayRow[]).map((w) => ({ ...w, waiting: true })),
+  ].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  const holidayBack = (h: HolidayRow): string => {
+    if (h.waiting) return "You were on the waiting list — taken off.";
+    if (!h.payment) return h.pass_id ? "It was on your monthly pass — it no longer counts." : "";
+    const now = Number(h.payment.credited_sek ?? 0) + Number(h.payment.credit_returned_sek ?? 0);
+    if (h.payment.status === "claimed") return `${now > 0 ? `${credits(now)} back now; your` : "Your"} Swish payment comes back as credits when the treasurer sees it in the bank.`;
+    return now > 0 ? `${credits(now)} back to your balance.` : "Nothing was paid.";
+  };
   const weekUsed = (weekRows ?? []).length;
   const perWeek = settings?.pass_twice_per_week ?? 2;
   const maxUpcoming = settings?.pass_max_upcoming ?? 4;
@@ -84,6 +106,17 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
       </div>
       <div className="stack">
         <Notice error={error} ok={ok} text={noticeText} />
+        {holidayRows.length > 0 && (
+          <div className="card stack" style={{ gap: 8, padding: "12px 16px", border: "1.5px dashed var(--dash)" }}>
+            <div className="bold">Cancelled for a holiday</div>
+            {holidayRows.map((h) => (
+              <div key={h.id} className="small">
+                <b>{longDate(parseISODate(h.date))}{h.slot ? ` · ${sessionLabel(h.slot.session)}` : ""}</b>
+                <span className="muted"> — {h.closure?.reason ?? "Holiday"}.</span> {holidayBack(h)}
+              </div>
+            ))}
+          </div>
+        )}
         {curPass ? (
           <div className={`card stack person ${passWorks(curPass) ? "paid" : ""}`} style={{ gap: 8, alignItems: "stretch", flexDirection: "column", padding: "12px 16px" }}>
             <div className="row between">

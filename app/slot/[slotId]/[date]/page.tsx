@@ -21,12 +21,14 @@ export default async function SlotPage({ params, searchParams }: {
   if (!isValidISODate(date)) notFound();
 
   const supabase = await createClient();
-  const [{ data: slot, error: slotErr }, { data: bookings, error: bookingsErr }, { data: waiting, error: waitErr }, { data: settings }, { data: coverRow, error: coverErr }] = await Promise.all([
+  const [{ data: slot, error: slotErr }, { data: bookings, error: bookingsErr }, { data: waiting, error: waitErr }, { data: settings }, { data: coverRow, error: coverErr }, { data: closureRows }] = await Promise.all([
     supabase.from("slots").select("id, weekday, session, start_time, end_time, capacity, instructor_id, whatsapp_url, instructor:members!slots_instructor_id_fkey(name)").eq("id", slotId).single(),
     supabase.from("bookings").select("id, member_id, created_at, payment_id, pass_id, promoted_at, member:members(name)").eq("slot_id", slotId).eq("date", date).eq("status", "booked").order("created_at"),
     supabase.from("waitlist").select("id, member_id, created_at, member:members(name)").eq("slot_id", slotId).eq("date", date).eq("status", "waiting").order("created_at"),
     supabase.from("settings").select("seat_price_sek, cancel_deadline_days, pass_twice_per_week, pass_max_upcoming").eq("id", 1).single(),
     supabase.rpc("my_pass_cover", { p_date: date }),
+    // v19.2: a holiday on this date (read errors ignored — the database stops a booking anyway)
+    supabase.from("closures").select("session, reason").is("reopened_at", null).lte("date_from", date).gte("date_to", date).order("created_at"),
   ]);
   // a failed read must not look like "nobody booked" (PGRST116 = no such slot → 404 below)
   if (loadFailed("slot", { slot: slotErr?.code === "PGRST116" ? null : slotErr, bookings: bookingsErr, waitlist: waitErr, pass_cover: coverErr })) {
@@ -58,7 +60,8 @@ export default async function SlotPage({ params, searchParams }: {
   }
   const d = parseISODate(date);
   const taken = list.length;
-  const closed = !slot.instructor_id;              // v16.1: no teacher = not open for booking
+  const holiday = ((closureRows ?? []) as { session: string | null; reason: string }[]).find((c) => !c.session || c.session === slot.session)?.reason ?? null;
+  const closed = !slot.instructor_id || !!holiday; // v16.1: no teacher = not open for booking · v19.2: a holiday
   const cap = closed ? 0 : slot.capacity;
   const extraFrom = closed ? Infinity : cap;      // seats kept from before the teacher was taken off aren't "extra"
   const left = Math.max(0, cap - taken);
@@ -77,7 +80,7 @@ export default async function SlotPage({ params, searchParams }: {
   const coverNote = cover === "week_used" ? `This week's ${settings?.pass_twice_per_week ?? 2} pass sessions are used — this one is ${price} kr.`
     : cover === "unpaid" ? `Your monthly pass isn't paid yet — this seat is ${price} kr for now and moves onto the pass once you tap “I have paid” for it.`
     : null;
-  const seatsText = closed ? "Not open — no teacher yet" : left > 0 ? `${left} seat${left === 1 ? "" : "s"} left` : taken > cap ? `Full · ${taken - cap} extra` : "Full";
+  const seatsText = holiday ? `Closed — ${holiday}` : closed ? "Not open — no teacher yet" : left > 0 ? `${left} seat${left === 1 ? "" : "s"} left` : taken > cap ? `Full · ${taken - cap} extra` : "Full";
   const noticeText = ok === "cancelled" ? cancelledText(to, cr, later) : undefined;
 
   return (
@@ -187,6 +190,8 @@ export default async function SlotPage({ params, searchParams }: {
               <button className="btn quiet">Leave the waiting list</button>
             </form>
           </>
+        ) : holiday ? (
+          <div className="notice">Closed for a holiday — {holiday}. Nobody can book this session.</div>
         ) : iTeachThis ? (
           <div className="notice">You&apos;re the teacher for this session — no seat needed.</div>
         ) : closed ? (

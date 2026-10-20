@@ -12,6 +12,7 @@ type Row = {
   start_time: string; end_time: string; capacity: number; instructor_name: string | null;
   taken: number; seats_left: number;
   waiting?: number;          // v15: members on the waiting list
+  closed_reason?: string | null;   // v19.2: a holiday — nobody can book
 };
 
 /** v19.1: booking and paying end on the board — the line at the top names the seat ("Tuesday 21 October · Evening"). */
@@ -49,6 +50,7 @@ export default async function BoardPage({ searchParams }: { searchParams: Promis
   const mineSet = new Set((mine ?? []).map((b) => `${b.slot_id}|${b.date}`));
   const waitingSet = new Set((myWaiting ?? []).map((w) => `${w.slot_id}|${w.date}`));
   const anyExtra = board.some((r) => r.taken > r.capacity);
+  const anyHoliday = board.some((r) => !!r.closed_reason);
   const seatRow = seat && isValidISODate(week) ? board.find((r) => r.slot_id === seat) : undefined;
   const seatText = seatRow && isValidISODate(week) ? seatNotice(ok, `${longDate(parseISODate(week))} · ${sessionLabel(seatRow.session)}`, c) : undefined;
   const windowWeeks = settings?.booking_window_weeks ?? 2;
@@ -86,6 +88,7 @@ export default async function BoardPage({ searchParams }: { searchParams: Promis
           <span><i className="swatch" style={{ background: "var(--red-soft)", border: "1px solid var(--red)" }} />Full</span>
           <span><i className="swatch" style={{ background: "var(--ink)" }} />Member</span>
           {anyExtra && <span><i className="swatch" style={{ background: "var(--ink)", border: "1.5px solid var(--red)" }} />Extra</span>}
+          {anyHoliday && <span><i className="swatch" style={{ border: "1.5px dashed var(--dash)" }} />Holiday — closed</span>}
         </div>
 
         <div className="board">
@@ -99,8 +102,9 @@ export default async function BoardPage({ searchParams }: { searchParams: Promis
                 {(["day", "evening"] as const).map((s) => {
                   const r = cells.find((c) => c.session === s);
                   if (!r) return <div key={s} className="cell" />;
-                  // no teacher = closed (v16.1): 0/0, no dots, can't be opened
-                  const closed = !r.instructor_name;
+                  // no teacher = closed (v16.1): 0/0, no dots, can't be opened · a holiday (v19.2) the same, with its reason
+                  const holiday = r.closed_reason ?? null;
+                  const closed = !r.instructor_name || !!holiday;
                   const cap = closed ? 0 : r.capacity;
                   const status = closed ? "closed" : r.taken >= r.capacity ? "full" : r.capacity - r.taken <= 2 ? "almost" : "";
                   const past = iso < todayISO;
@@ -113,7 +117,7 @@ export default async function BoardPage({ searchParams }: { searchParams: Promis
                     <>
                       <div className="row between" style={{ alignItems: "baseline" }}>
                         <span style={{ fontSize: 13, fontWeight: 700 }}>{s === "day" ? "Day" : "Evening"} <span style={{ fontWeight: 500, fontSize: 11, opacity: 0.8 }}>{r.start_time.slice(0, 2)}–{r.end_time.slice(0, 2)}</span></span>
-                        <span style={{ fontSize: 15, fontWeight: 700 }}>{r.taken}/{cap}</span>
+                        <span style={{ fontSize: holiday ? 12 : 15, fontWeight: 700 }}>{holiday ? "Holiday" : `${r.taken}/${cap}`}</span>
                       </div>
                       {n > 0 && (
                         <div className="dots" aria-label={`${r.taken} of ${r.capacity} seats taken`}>
@@ -122,12 +126,12 @@ export default async function BoardPage({ searchParams }: { searchParams: Promis
                           ))}
                         </div>
                       )}
-                      <div style={{ fontSize: 11, opacity: 0.85 }}>
+                      {holiday ? <div style={{ fontSize: 11, fontWeight: 600 }}>{holiday}</div> : <div style={{ fontSize: 11, opacity: 0.85 }}>
                         {r.instructor_name ? `Teacher ${r.instructor_name}` : "Teacher not set"}
                         {!closed && r.taken > r.capacity ? ` · +${r.taken - r.capacity} extra` : ""}
                         {waiting > 0 ? ` · ${waiting} waiting` : ""}
                         {isMine ? " · you" : amWaiting ? " · you (waiting)" : ""}
-                      </div>
+                      </div>}
                     </>
                   );
                   const cls = `cell ${status} ${past ? "past" : ""} ${isMine || amWaiting ? "mine" : ""}`;

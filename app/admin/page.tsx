@@ -24,14 +24,17 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const back = `/admin?week=${mondayISO}`;
 
   const supabase = await createClient();
-  const [{ data: slots, error: slotsErr }, { data: bookings, error: bookingsErr }, { data: waiting, error: waitErr }, { data: settings }] = await Promise.all([
+  const [{ data: slots, error: slotsErr }, { data: bookings, error: bookingsErr }, { data: waiting, error: waitErr }, { data: settings }, { data: closureRows }] = await Promise.all([
     supabase.from("slots").select("id, weekday, session, capacity, instructor:members!slots_instructor_id_fkey(name)").order("weekday").order("session"),
     supabase.from("bookings").select("id, slot_id, date, member_id, created_at, promoted_at, pass_id, member:members(name), payment:payments(id, code, status)")
       .eq("status", "booked").gte("date", mondayISO).lte("date", fridayISO).order("created_at"),
     supabase.from("waitlist").select("id, slot_id, date, created_at, member:members(name)")
       .eq("status", "waiting").gte("date", mondayISO).lte("date", fridayISO).order("created_at"),
     supabase.from("settings").select("seat_price_sek, swish_number").eq("id", 1).single(),
+    // v19.2: holidays this week
+    supabase.from("closures").select("date_from, date_to, session, reason").is("reopened_at", null).lte("date_from", fridayISO).gte("date_to", mondayISO).order("created_at"),
   ]);
+  const holidays = (closureRows ?? []) as { date_from: string; date_to: string; session: string | null; reason: string }[];
   const failed = loadFailed("admin", { slots: slotsErr, bookings: bookingsErr, waitlist: waitErr });
   const S = (slots ?? []) as unknown as Slot[];
   const B = (bookings ?? []) as unknown as Booking[];
@@ -44,13 +47,14 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
     const date = toISODate(addDays(monday, weekday - 1));
     const list = B.filter((b) => b.slot_id === slot.id && b.date === date);
     const queue = W.filter((w) => w.slot_id === slot.id && w.date === date);
-    const closed = !slot.instructor;                 // v16.1: no teacher = not open for booking (0/0)
+    const holiday = holidays.find((c) => c.date_from <= date && c.date_to >= date && (!c.session || c.session === session))?.reason ?? null;
+    const closed = !slot.instructor || !!holiday;    // v16.1: no teacher = not open for booking (0/0) · v19.2: a holiday
     const cap = closed ? 0 : slot.capacity;
     const full = !closed && list.length >= slot.capacity;
     return (
       <div className={`acell ${full ? "full" : closed ? "closed" : ""}`} key={slot.id + date}>
         <div className="row between" style={{ alignItems: "baseline" }}>
-          <span className="muted small">{slot.instructor?.name ? `Teacher ${slot.instructor.name}` : "No teacher"}</span>
+          <span className="muted small">{holiday ? <b>Holiday · {holiday}</b> : slot.instructor?.name ? `Teacher ${slot.instructor.name}` : "No teacher"}</span>
           <span className="bold" style={{ fontSize: 14 }}>{list.length}/{cap}</span>
         </div>
         {list.map((b, i) => {
@@ -118,6 +122,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           </div>
           <div className="row">
             <Link href="/admin/settings" className="pill">Settings & teachers</Link>
+            <Link href="/admin/holidays" className="pill">Holidays</Link>
             <Link href="/payments" className="pill">Payments</Link>
             <Link href="/" className="pill">Member view</Link>
           </div>

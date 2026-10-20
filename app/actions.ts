@@ -734,6 +734,43 @@ export async function issueMissingReceipts() {
   redirect(`${KVITTON}?ok=kvitton_issued&n=${Number(data) || 0}`);
 }
 
+// ---- holidays (v19.2) -------------------------------------------------------
+
+const HOLIDAYS = "/admin/holidays";
+
+/** Admin: close days (whole day, or only Day / Evening). Seats already booked are cancelled — paid ones come back as credits. */
+export async function createClosure(formData: FormData) {
+  const me = await currentMember();
+  if (!me || !hasRole(me, "admin")) redirect("/");
+  const from = String(formData.get("from") || "");
+  const to = String(formData.get("to") || "") || from;
+  const raw = String(formData.get("session") || "");
+  const session = raw === "day" || raw === "evening" ? raw : null;
+  const reason = String(formData.get("reason") || "").trim();
+  const again = `${HOLIDAYS}?from=${from}&to=${to}&session=${session ?? "all"}&reason=${encodeURIComponent(reason)}`;
+  if (!isValidISODate(from) || !isValidISODate(to)) backWithError(again, "Choose the first and the last day");
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("create_closure", { p_from: from, p_to: to, p_session: session, p_reason: reason });
+  if (error) backWithError(again, error.message);
+  refreshSeats();
+  refreshCredits();
+  revalidatePath(HOLIDAYS);
+  const r = (data ?? {}) as { cancelled?: number; credits?: number; claimed?: number; waiting?: number };
+  redirect(`${HOLIDAYS}?ok=closed&n=${Number(r.cancelled) || 0}&cr=${Number(r.credits) || 0}&cl=${Number(r.claimed) || 0}&w=${Number(r.waiting) || 0}`);
+}
+
+/** Admin: open a holiday again — members can book. Seats it cancelled stay cancelled. */
+export async function reopenClosure(formData: FormData) {
+  const me = await currentMember();
+  if (!me || !hasRole(me, "admin")) redirect("/");
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("reopen_closure", { p_id: String(formData.get("closure_id")) });
+  if (error) backWithError(HOLIDAYS, error.message);
+  refreshSeats();
+  revalidatePath(HOLIDAYS);
+  redirect(`${HOLIDAYS}?ok=reopened`);
+}
+
 export async function setInstructor(formData: FormData) {
   const me = await currentMember();
   if (!me || !hasRole(me, "admin")) redirect("/");
