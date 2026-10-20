@@ -2,9 +2,10 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient, currentMember } from "@/lib/supabase/server";
 
-import { addDays, isValidISODate, mondayOf, parseISODate, shortDate, toISODate, weekLabel, WEEKDAYS } from "@/lib/dates";
+import { addDays, isValidISODate, longDate, mondayOf, parseISODate, sessionLabel, shortDate, toISODate, weekLabel, WEEKDAYS } from "@/lib/dates";
 import { Chevron, LoadError, Notice, TopNav } from "@/app/components";
 import { loadFailed } from "@/lib/loadError";
+import { credits } from "@/lib/credits";
 
 type Row = {
   slot_id: string; date: string; weekday: number; session: "day" | "evening";
@@ -13,12 +14,21 @@ type Row = {
   waiting?: number;          // v15: members on the waiting list
 };
 
-export default async function BoardPage({ searchParams }: { searchParams: Promise<{ week?: string; error?: string; ok?: string }> }) {
+/** v19.1: booking and paying end on the board — the line at the top names the seat ("Tuesday 21 October · Evening"). */
+function seatNotice(ok: string | undefined, seat: string, c: string | undefined): string | undefined {
+  if (ok === "paid") return `Paid — ${seat}. The treasurer confirms it when it shows up in the bank.`;
+  if (ok === "credits_paid") return `Paid with ${c ? credits(c) : "credits"} — ${seat}. See you there.`;
+  if (ok === "booked_pass") return `Booked with your monthly pass — ${seat}. Nothing to pay. See you there.`;
+  if (ok === "held") return `Seat held — ${seat}. Not paid yet: tap it on the board to pay.`;
+  return undefined;
+}
+
+export default async function BoardPage({ searchParams }: { searchParams: Promise<{ week?: string; error?: string; ok?: string; seat?: string; c?: string }> }) {
   const me = await currentMember();
   if (!me) redirect("/login");
   if (me.name === "New member") redirect("/welcome");
 
-  const { week, error, ok } = await searchParams;
+  const { week, error, ok, seat, c } = await searchParams;
   const today = new Date();
   const thisMonday = mondayOf(today);
   const monday = isValidISODate(week) ? mondayOf(parseISODate(week)) : thisMonday;
@@ -39,6 +49,8 @@ export default async function BoardPage({ searchParams }: { searchParams: Promis
   const mineSet = new Set((mine ?? []).map((b) => `${b.slot_id}|${b.date}`));
   const waitingSet = new Set((myWaiting ?? []).map((w) => `${w.slot_id}|${w.date}`));
   const anyExtra = board.some((r) => r.taken > r.capacity);
+  const seatRow = seat && isValidISODate(week) ? board.find((r) => r.slot_id === seat) : undefined;
+  const seatText = seatRow && isValidISODate(week) ? seatNotice(ok, `${longDate(parseISODate(week))} · ${sessionLabel(seatRow.session)}`, c) : undefined;
   const windowWeeks = settings?.booking_window_weeks ?? 2;
   const lastBookable = addDays(today, windowWeeks * 7);
 
@@ -57,7 +69,7 @@ export default async function BoardPage({ searchParams }: { searchParams: Promis
       </div>
 
       <div className="stack">
-        <Notice error={error} ok={ok} />
+        <Notice error={error} ok={ok} text={seatText} />
         <div className="weeknav">
           <Link className="iconbtn" href={`/?week=${toISODate(addDays(monday, -7))}`} aria-label="Previous week"><Chevron dir="left" /></Link>
           <div style={{ textAlign: "center" }}>

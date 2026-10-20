@@ -101,6 +101,8 @@ export function Notice({ error, ok, text }: { error?: string; ok?: string; text?
   if (ok === "credits_adjusted") return <div className="notice ok">Balance corrected.</div>;
   if (ok === "credits_voided") return <div className="notice ok">Credits taken back.</div>;
   if (ok === "booked_pass") return <div className="notice ok">Booked with your monthly pass — nothing to pay. See you there.</div>;
+  if (ok === "credits_paid") return <div className="notice ok">Paid with credits. See you there.</div>;
+  if (ok === "held") return <div className="notice ok">Seat held — it isn&apos;t paid yet. Open it to pay when you are ready.</div>;
   if (ok === "pass_cancelled") return <div className="notice ok">Pass cancelled.</div>;
   if (ok === "crew_rate") return <div className="notice ok">Crew rate saved.</div>;
   return null;

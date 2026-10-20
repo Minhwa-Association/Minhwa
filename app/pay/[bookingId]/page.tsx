@@ -9,8 +9,9 @@ import { balanceOf, credits, creditsHeld } from "@/lib/credits";
 import { SwishPay } from "./SwishPay";
 
 /**
- * /pay/[bookingId]            — came from the seat page (default) → goes back there afterwards
+ * /pay/[bookingId]            — came from the seat page (default) → when paid (or held for later), that week's board
  * /pay/[bookingId]?from=me    — came from My seats → goes back to My seats
+ * The "Back" link at the top still goes to the seat (or My seats) — that is plain navigation, not the end of paying.
  */
 export default async function PayPage({ params, searchParams }: { params: Promise<{ bookingId: string }>; searchParams: Promise<{ error?: string; ok?: string; c?: string; from?: string }> }) {
   const me = await currentMember();
@@ -49,6 +50,10 @@ export default async function PayPage({ params, searchParams }: { params: Promis
   const back = fromMe ? "/me" : `/slot/${slot.id}/${b.date}`;
   const backLabel = fromMe ? "My seats" : "the seat";
   const here = `/pay/${b.id}${fromMe ? "?from=me" : ""}`;
+  // v19.1: paying ends on that week's board, with the seat named at the top (My seats stays My seats)
+  const board = `/?week=${b.date}&seat=${slot.id}`;
+  const done = fromMe ? "/me" : board;
+  const doneLabel = fromMe ? "My seats" : "the weekly board";
   const onlyCredits = confirmed && creditUsed > 0 && payment.amount_sek === 0;
   const creditsCoverAll = pending && balance >= payment.amount_sek;
   const okText = ok === "credits_used" && c ? (confirmed ? `Paid with ${credits(c)}. See you there.` : `${credits(c)} used — pay the rest with Swish.`) : undefined;
@@ -101,14 +106,16 @@ export default async function PayPage({ params, searchParams }: { params: Promis
               <form action={applyCredits}>
                 <input type="hidden" name="payment_id" value={payment.id} />
                 <input type="hidden" name="back" value={here} />
+                <input type="hidden" name="done" value={done} />
                 <button className="btn red">Pay with {credits(payment.amount_sek)}</button>
               </form>
             )}
-            <SwishPay link={link} amount={payment.amount_sek} paymentId={payment.id} back={back} backLabel={backLabel} claimed={claimed} primary={!creditsCoverAll} />
+            <SwishPay link={link} amount={payment.amount_sek} paymentId={payment.id} back={done} backLabel={doneLabel} claimed={claimed} primary={!creditsCoverAll} />
             {pending && balance > 0 && balance < payment.amount_sek && (
               <form action={applyCredits}>
                 <input type="hidden" name="payment_id" value={payment.id} />
                 <input type="hidden" name="back" value={here} />
+                <input type="hidden" name="done" value={done} />
                 <button className="btn line">Use my {credits(balance)}, Swish the rest</button>
               </form>
             )}
@@ -119,7 +126,7 @@ export default async function PayPage({ params, searchParams }: { params: Promis
                 <button className="btn quiet">Keep my credits — pay all with Swish</button>
               </form>
             )}
-            <Link href={back} className="btn quiet">{fromWaitlist ? "Decide later" : "Hold the seat, pay later"}</Link>
+            <Link href={fromMe ? back : `${board}&ok=held`} className="btn quiet">{fromWaitlist ? "Decide later" : "Hold the seat, pay later"}</Link>
           </>
         )}
         {receipt && <Link href={`/receipt/${receipt.id}?from=pay&b=${b.id}`} className="btn line">Receipt {receipt.number}</Link>}

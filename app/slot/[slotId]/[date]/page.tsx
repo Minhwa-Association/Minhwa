@@ -68,6 +68,7 @@ export default async function SlotPage({ params, searchParams }: {
   const instructorName = (slot.instructor as unknown as { name: string } | null)?.name ?? null;
   const iTeachThis = slot.instructor_id === me.id;
   const here = `/slot/${slotId}/${date}`;
+  const board = `/?week=${date}&seat=${slotId}`;   // v19.1: "I have paid" ends on that week's board
   const rows = [...list.map((b, i) => ({ b, i })), ...Array.from({ length: left }).map((_, k) => ({ b: null, i: taken + k }))];
   const nameOf = (m: unknown) => (m as { name: string } | null)?.name ?? "Member";
   const fromWaitlistUnpaid = !!mine?.promoted_at && myPayment?.status === "pending";
@@ -157,7 +158,7 @@ export default async function SlotPage({ params, searchParams }: {
                 <Link href={`/pay/${mine.id}`} className="btn red">Pay {price} kr with Swish</Link>
                 <form action={claimPayment}>
                   <input type="hidden" name="payment_id" value={mine.payment_id ?? ""} />
-                  <input type="hidden" name="back" value={here} />
+                  <input type="hidden" name="back" value={board} />
                   <button className="btn line">I have paid already</button>
                 </form>
               </>

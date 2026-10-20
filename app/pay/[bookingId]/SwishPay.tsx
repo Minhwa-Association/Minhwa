@@ -10,7 +10,7 @@ import { claimPayment } from "@/app/actions";
  * API), so the member confirms with one tap. To make that tap hard to miss: the moment "Open Swish" is
  * tapped, "I have paid" becomes the big primary button — it is what the member sees when they come back
  * from Swish, and it is remembered for this payment (localStorage) in case the page is opened again.
- * "I have paid" sends the member back to where they came from (the seat or My seats).
+ * "I have paid" ends paying: that week's board (v19.1), or My seats when the member came from there.
  */
 export function SwishPay({ link, amount, paymentId, back, backLabel, claimed, primary }: {
   link: string;
@@ -56,7 +56,7 @@ export function SwishPay({ link, amount, paymentId, back, backLabel, claimed, pr
           <button className={`btn ${primary ? "red" : "ink"}`}>I have paid {amount} kr</button>
         </form>
         <a href={link} onClick={markOpened} className="btn line">Open Swish again</a>
-        <div className="muted small" style={{ textAlign: "center" }}>Back from Swish? Tap &ldquo;I have paid&rdquo; — that is the last step. You go back to {backLabel}.</div>
+        <div className="muted small" style={{ textAlign: "center" }}>Back from Swish? Tap &ldquo;I have paid&rdquo; — that is the last step. You then see {backLabel}.</div>
       </>
     );
   }
@@ -69,7 +69,7 @@ export function SwishPay({ link, amount, paymentId, back, backLabel, claimed, pr
         <input type="hidden" name="back" value={back} />
         <button className="btn line">I have paid already</button>
       </form>
-      <div className="muted small" style={{ textAlign: "center" }}>After paying in Swish, come back here and tap &ldquo;I have paid&rdquo; — you then go back to {backLabel}, shown as awaiting confirmation until the treasurer sees it in the bank.</div>
+      <div className="muted small" style={{ textAlign: "center" }}>After paying in Swish, come back here and tap &ldquo;I have paid&rdquo; — you then see {backLabel}, your seat shown as awaiting confirmation until the treasurer sees it in the bank.</div>
     </>
   );
 }

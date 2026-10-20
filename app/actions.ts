@@ -29,6 +29,11 @@ function refreshSeats() {
   revalidatePath("/payments");
 }
 
+/** v19.1: that week's board with the seat named at the top — where booking and paying end. */
+function boardAt(slotId: string, date: string): string {
+  return `/?week=${date}&seat=${slotId}`;
+}
+
 /** Book a seat → the pay page. A full session says so (the member joins the waiting list instead). */
 export async function bookSeat(formData: FormData) {
   const slotId = String(formData.get("slot_id"));
@@ -37,9 +42,9 @@ export async function bookSeat(formData: FormData) {
   const { data, error } = await supabase.rpc("book_seat", { p_slot_id: slotId, p_date: date });
   if (error) backWithError(`/slot/${slotId}/${date}`, error.message);
   refreshSeats();
-  // v16: a seat covered by the monthly pass has nothing to pay — straight back to the session
+  // v16: a seat covered by the monthly pass has nothing to pay — v19.1: straight to that week's board
   const { data: b } = await supabase.from("bookings").select("pass_id").eq("id", data).single();
-  if (b?.pass_id) redirect(withOk(`/slot/${slotId}/${date}`, "booked_pass"));
+  if (b?.pass_id) redirect(withOk(boardAt(slotId, date), "booked_pass"));
   redirect(`/pay/${data}`);
 }
 
@@ -1053,12 +1058,24 @@ export async function applyCredits(formData: FormData) {
   const me = await currentMember();
   if (!me) redirect("/login");
   const back = safeBack(formData, "/me");
+  const paymentId = String(formData.get("payment_id"));
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("apply_credits", { p_payment_id: String(formData.get("payment_id")) });
+  const { data, error } = await supabase.rpc("apply_credits", { p_payment_id: paymentId });
   if (error) backWithError(back, error.message);
   kvittonToDrive();   // credits covering everything = paid → a receipt
   refreshCredits();
-  redirect(`${back}${back.includes("?") ? "&" : "?"}ok=credits_used&c=${Number(data ?? 0)}`);
+  const used = Number(data ?? 0);
+  // v19.1: credits that paid it all go straight on to where paying ends ("done" — the seat's board, or My seats);
+  // credits that paid only part go back to the pay page, to Swish the rest
+  const done = String(formData.get("done") || "");
+  if (done.startsWith("/") && !done.startsWith("//")) {
+    const { data: p } = await supabase.from("payments").select("status").eq("id", paymentId).single();
+    if (p?.status === "confirmed") {
+      refreshSeats();
+      redirect(`${done}${done.includes("?") ? "&" : "?"}ok=credits_paid&c=${used}`);
+    }
+  }
+  redirect(`${back}${back.includes("?") ? "&" : "?"}ok=credits_used&c=${used}`);
 }
 
 /** Member: take the credits off an unpaid payment and pay it all with Swish. */
