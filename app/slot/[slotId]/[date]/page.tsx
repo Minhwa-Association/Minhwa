@@ -81,6 +81,10 @@ export default async function SlotPage({ params, searchParams }: {
     : cover === "unpaid" ? `Your monthly pass isn't paid yet — this seat is ${price} kr for now and moves onto the pass once you tap “I have paid” for it.`
     : null;
   const seatsText = holiday ? `Closed — ${holiday}` : closed ? "Not open — no teacher yet" : left > 0 ? `${left} seat${left === 1 ? "" : "s"} left` : taken > cap ? `Full · ${taken - cap} extra` : "Full";
+  // v19.7: members tapped the "Open seat" rows expecting to book — so an open seat IS the book button
+  // (same conditions as the button at the bottom; a member first on the waiting list can take an open seat too)
+  const canTake = !closed && !mine && !iTeachThis && left > 0 && cover !== "cap" && (!myWait || myWaitIndex < left);
+  const plain = canTake && !myWait; // the ordinary case: button above the rows, nothing in the footer
   const noticeText = ok === "cancelled" ? cancelledText(to, cr, later) : undefined;
 
   return (
@@ -112,6 +116,18 @@ export default async function SlotPage({ params, searchParams }: {
           {!closed && <div className="progress" style={{ marginTop: 6 }}><div style={{ width: `${Math.min(100, (taken / cap) * 100)}%` }} /></div>}
         </div>
 
+        {plain && (
+          <div className="stack" style={{ gap: 8 }}>
+            {coverNote && <div className="notice">{coverNote}</div>}
+            <form action={bookSeat}>
+              <input type="hidden" name="slot_id" value={slotId} />
+              <input type="hidden" name="date" value={date} />
+              <SubmitButton className="btn red" pendingText="Booking…">Book this seat · {costText}</SubmitButton>
+            </form>
+            <div className="muted small" style={{ textAlign: "center" }}>{cover === "pass" ? "Covered by your monthly pass — nothing to pay" : "Swish opens right after you book"}{canTake ? " · or tap an open seat below" : ""}</div>
+          </div>
+        )}
+
         {(!closed || list.length > 0) && <div className="row between">
           <div className="muted small">Who&apos;s coming</div>
           <div className="legend" style={{ gap: 10 }}>
@@ -128,7 +144,19 @@ export default async function SlotPage({ params, searchParams }: {
                 {i >= extraFrom ? <PaymentTag extra /> : b.member_id === me.id ? (mineOnPass ? <PassTag /> : <PaymentTag status={myPayment?.status} />) : null}
               </div>
             ) : (
-              <div key={`open-${i}`} className="card dashed person"><div className="avatar ghost" /><div>Open seat</div></div>
+              canTake ? (
+                <form key={`open-${i}`} action={bookSeat}>
+                  <input type="hidden" name="slot_id" value={slotId} />
+                  <input type="hidden" name="date" value={date} />
+                  <SubmitButton className="card dashed person seatbtn" pendingText="Booking…">
+                    <span className="avatar ghost" aria-hidden="true">+</span>
+                    <span className="grow" style={{ textAlign: "left" }}><span className="bold">Open seat</span><span className="muted small" style={{ display: "block" }}>Tap to book · {costText}</span></span>
+                    <Chevron dir="right" />
+                  </SubmitButton>
+                </form>
+              ) : (
+                <div key={`open-${i}`} className="card dashed person"><div className="avatar ghost" /><div>Open seat</div></div>
+              )
             )
           )}
         </div>
@@ -152,7 +180,7 @@ export default async function SlotPage({ params, searchParams }: {
         )}
       </div>
 
-      <div className="footer">
+      {!plain && <div className="footer">
         {mine ? (
           <>
             {fromWaitlistUnpaid && <div className="notice">This seat came to you from the waiting list — pay to keep it, or decline it (free until you pay).</div>}
@@ -207,18 +235,8 @@ export default async function SlotPage({ params, searchParams }: {
           </>
         ) : cover === "cap" ? (
           <div className="notice">Your pass already holds {settings?.pass_max_upcoming ?? 4} upcoming seats. Cancel one, or book again after one has passed.</div>
-        ) : (
-          <>
-            {coverNote && <div className="notice">{coverNote}</div>}
-            <form action={bookSeat}>
-              <input type="hidden" name="slot_id" value={slotId} />
-              <input type="hidden" name="date" value={date} />
-              <SubmitButton className="btn red" pendingText="Booking…">Book this seat · {costText}</SubmitButton>
-            </form>
-            <div className="muted small" style={{ textAlign: "center" }}>{cover === "pass" ? "Covered by your monthly pass — nothing to pay" : "Swish opens right after you book"}</div>
-          </>
-        )}
-      </div>
+        ) : null /* v19.7: the plain "Book this seat" button now sits above the seat rows */}
+      </div>}
     </main>
   );
 }
