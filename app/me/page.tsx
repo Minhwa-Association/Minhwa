@@ -37,6 +37,9 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
   const nextPass = myPasses.find((p) => p.period_start > todayISO) ?? null;
   const nextOffer = offers.find((o) => o.period_start > todayISO) ?? null;
   const openOffer = offers.find((o) => o.open && !myPasses.some((p) => p.period_start === o.period_start)) ?? null;
+  // no pass: offer the period that is on sale now (this month, once it has started) before the one after it
+  const promo = openOffer ?? nextOffer;
+  const promoRunning = !!promo && promo.period_start <= todayISO;
   // this week's seats on the pass (twice a week) — bookings from Monday, including days that have passed
   // on Saturday and Sunday the week to look at is the coming one (sessions are Mon–Fri)
   const todayDate = parseISODate(todayISO);
@@ -140,7 +143,7 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
               {openOffer && <Link href={`/pass?period=${openOffer.period_start}`} className={`btn ${remind ? "red" : "line"} sm`}>Get {periodName(openOffer.period_start, openOffer.period_end)}&apos;s pass</Link>}
             </div>
           </div>
-        ) : (nextPass || nextOffer) ? (
+        ) : (nextPass || promo) ? (
           <div className={`card stack ${nextPass && passWorks(nextPass) ? "person paid" : ""}`} style={{ gap: 8, alignItems: "stretch", flexDirection: "column", padding: "12px 16px" }}>
             {nextPass ? (
               <>
@@ -153,11 +156,11 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
               </>
             ) : (
               <>
-                <div className="small"><b>Monthly pass</b><span className="muted"> · pay once, book without paying. From {shortDay(nextOffer!.period_start)}.</span></div>
+                <div className="small"><b>Monthly pass</b><span className="muted"> · pay once, book without paying. {promoRunning ? `Valid until ${shortDay(promo!.period_end)}.` : `From ${shortDay(promo!.period_start)}.`}</span></div>
                 <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-                  {nextOffer!.open
-                    ? <Link href={`/pass?period=${nextOffer!.period_start}`} className="btn red sm">Get a pass</Link>
-                    : <><Link href={`/pass?period=${nextOffer!.period_start}`} className="btn line sm">See the passes</Link><span className="muted small">On sale from {shortDay(nextOffer!.buy_from)}</span></>}
+                  {promo!.open
+                    ? <Link href={`/pass?period=${promo!.period_start}`} className="btn red sm">Get {periodName(promo!.period_start, promo!.period_end)}&apos;s pass</Link>
+                    : <><Link href={`/pass?period=${promo!.period_start}`} className="btn line sm">See the passes</Link><span className="muted small">On sale from {shortDay(promo!.buy_from)}</span></>}
                 </div>
               </>
             )}
