@@ -31,7 +31,7 @@ The app takes in members' receipts mailed to `receipt@minhwa.org` (an alias of `
 4. Send one test mail with a photo to receipt@minhwa.org → it should appear under Payments → Receipts within a minute, and the sender (if a member with that e-mail) gets the "received" reply. The Receipts page lists any variable still missing.
 
 ## How it works
-- `/` weekly board (10 slots × week). Dots = members; 5 = "Full" (+ "n waiting" when the list is in use).
+- `/` weekly board (11 sessions × week: Monday–Friday Day 10–16 and Evening 17–20, Saturday Day 14–17 — v19.5). Dots = members; 6 = "Full" (5 on Saturday; `slots.capacity`) (+ "n waiting" when the list is in use). A session with no teacher is closed (0/0).
 - `/slot/[id]/[date]` who's coming + Book. Booking calls `book_seat()` in the database, which checks window/capacity and creates a **payment** with a short code (`S0231`). A full session shows **Join the waiting list** instead (see *Waiting list* below) and lists who is waiting, in order.
 - `/pay/[bookingId]` opens Swish via deep link with number, amount and message pre-filled — the message starts with the code: `S0231 05/10 Mon Day Rock`. Swish cannot tell the app that the payment went through (that needs the merchant API), so the member taps **"I have paid"** — the moment "Open Swish" is tapped, "I have paid" becomes the big primary button (remembered per payment in the browser), and tapping it goes **back to where the member came from** (the seat page, or My seats with `?from=me`) with the seat shown as *awaiting confirmation*. The seat page and My seats also have "I have paid" for a seat that is still *not paid yet*. The treasurer confirms in Payments.
 - `/me` my seats and my waiting-list places (in date order), pay / I have paid / cancel (free until N days before — enforced in `cancel_booking()`); a seat that came from the waiting list can be declined any time before it is paid.
@@ -102,7 +102,7 @@ Unused credits are a debt of the association (goods and seats still owed) — sh
 
 ## Monthly passes (v16)
 Paying per session stays (`settings.seat_price_sek`). A member can also buy a **monthly pass** (`passes`, one payment with `kind = 'pass'`, code P…, Swish message `P0412 Pass Nov Unlimited Rock`):
-- **Twice a week** (`twice`, 550 kr) — up to `pass_twice_per_week` (2) seats in a Mon–Fri week; the next one that week is the usual price. Weekly counts don't carry over.
+- **Twice a week** (`twice`, 550 kr) — up to `pass_twice_per_week` (2) seats in a Mon–Sat week; the next one that week is the usual price. Weekly counts don't carry over.
 - **Unlimited** (`unlimited`, 1 000 kr) — any number, at most `pass_max_upcoming` (4) upcoming seats held at a time (`book_seat` says so; a seat from the waiting list is given anyway).
 - **Crew Unlimited** (`crew`, 550 kr) — the same, for members the admin gives the Crew rate (`members.crew_rate_until`, Admin → Settings → Crew rate). After that date it can't be bought again; a bought pass runs to its end.
 

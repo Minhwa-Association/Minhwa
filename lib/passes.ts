@@ -1,6 +1,6 @@
 /**
  * Monthly passes (v16). Paying 100 kr per session stays; a pass covers seats for one period instead.
- *   twice     — up to 2 sessions in a Mon–Fri week (the 3rd that week is 100 kr)
+ *   twice     — up to 2 sessions in a Mon–Sat week (the 3rd that week is 100 kr)
  *   unlimited — any number, at most 4 upcoming seats held at a time
  *   crew      — Unlimited at the Crew price, for members the admin gives the Crew rate (with an end date)
  * One period for everyone: settings.pass_start_day (1 → 1 Nov – 30 Nov). A pass works from "I have paid".
@@ -12,7 +12,7 @@ import { MONTHS, parseISODate } from "@/lib/dates";
 export type PassKind = "twice" | "unlimited" | "crew";
 
 export const PASS_KINDS: { key: PassKind; label: string; hint: string }[] = [
-  { key: "twice", label: "Twice a week", hint: "Up to 2 sessions a week (Mon–Fri). A 3rd session that week is the usual price." },
+  { key: "twice", label: "Twice a week", hint: "Up to 2 sessions a week (Mon–Sat). A 3rd session that week is the usual price." },
   { key: "unlimited", label: "Unlimited", hint: "Come as often as you like — up to 4 upcoming seats booked at a time." },
   { key: "crew", label: "Crew Unlimited", hint: "Unlimited at the Crew price — for members who help run the association's activities." },
 ];

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient, currentMember } from "@/lib/supabase/server";
 import { hasRole } from "@/lib/roles";
-import { addDays, isValidISODate, mondayOf, parseISODate, shortDate, toISODate, weekLabel, WEEKDAYS_LONG } from "@/lib/dates";
+import { addDays, hm, isValidISODate, mondayOf, parseISODate, shortDate, toISODate, weekLabel, WEEK_LAST, WEEKDAYS, WEEKDAYS_LONG } from "@/lib/dates";
 import { paymentClass } from "@/lib/payments";
 import { removedText } from "@/lib/waitlist";
 import { confirmPayment, cancelBooking, leaveWaitlist } from "@/app/actions";
@@ -11,7 +11,18 @@ import { loadFailed } from "@/lib/loadError";
 
 type Booking = { id: string; slot_id: string; date: string; member_id: string; created_at: string; promoted_at: string | null; pass_id: string | null; member: { name: string } | null; payment: { id: string; code: string | null; status: string } | null };
 type Waiting = { id: string; slot_id: string; date: string; created_at: string; member: { name: string } | null };
-type Slot = { id: string; weekday: number; session: "day" | "evening"; capacity: number; instructor: { name: string } | null };
+type Slot = { id: string; weekday: number; session: "day" | "evening"; start_time: string; end_time: string; capacity: number; instructor: { name: string } | null };
+
+/** "10:00 – 16:00" when every slot of the session has the same times, else "10:00 – 16:00 · Sat 14:00 – 17:00" (the odd ones named). */
+function sessionTimes(slots: Slot[], session: "day" | "evening"): string {
+  const groups = new Map<string, number[]>();
+  for (const s of slots.filter((x) => x.session === session)) {
+    const k = `${hm(s.start_time)} – ${hm(s.end_time)}`;
+    groups.set(k, [...(groups.get(k) ?? []), s.weekday]);
+  }
+  const sorted = [...groups.entries()].sort((a, b) => b[1].length - a[1].length);
+  return sorted.map(([k, days], i) => (i === 0 ? k : `${days.map((w) => WEEKDAYS[w - 1]).join("/")} ${k}`)).join(" · ");
+}
 
 export default async function AdminPage({ searchParams }: { searchParams: Promise<{ week?: string; error?: string; ok?: string; to?: string; cr?: string; later?: string }> }) {
   const me = await currentMember();
@@ -20,12 +31,12 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
   const { week, error, ok, to, cr, later } = await searchParams;
   const monday = isValidISODate(week) ? mondayOf(parseISODate(week)) : mondayOf(new Date());
   const mondayISO = toISODate(monday);
-  const fridayISO = toISODate(addDays(monday, 4));
+  const fridayISO = toISODate(addDays(monday, WEEK_LAST));   // the board week ends on Saturday (v19.5)
   const back = `/admin?week=${mondayISO}`;
 
   const supabase = await createClient();
   const [{ data: slots, error: slotsErr }, { data: bookings, error: bookingsErr }, { data: waiting, error: waitErr }, { data: settings }, { data: closureRows }] = await Promise.all([
-    supabase.from("slots").select("id, weekday, session, capacity, instructor:members!slots_instructor_id_fkey(name)").order("weekday").order("session"),
+    supabase.from("slots").select("id, weekday, session, start_time, end_time, capacity, instructor:members!slots_instructor_id_fkey(name)").order("weekday").order("session"),
     supabase.from("bookings").select("id, slot_id, date, member_id, created_at, promoted_at, pass_id, member:members(name), payment:payments(id, code, status)")
       .eq("status", "booked").gte("date", mondayISO).lte("date", fridayISO).order("created_at"),
     supabase.from("waitlist").select("id, slot_id, date, created_at, member:members(name)")
@@ -134,10 +145,10 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
           {WEEKDAYS_LONG.map((d, i) => (
             <div className="adminhead" key={d}><b>{d}</b><span className="muted small">{shortDate(addDays(monday, i))}</span></div>
           ))}
-          <div className="rowlabel"><div className="bold">Day</div><div className="muted small">10:00 – 16:00</div></div>
-          {[1, 2, 3, 4, 5].map((w) => cell(w, "day") ?? <div key={`d${w}`} />)}
-          <div className="rowlabel"><div className="bold">Evening</div><div className="muted small">17:00 – 20:00</div></div>
-          {[1, 2, 3, 4, 5].map((w) => cell(w, "evening") ?? <div key={`e${w}`} />)}
+          <div className="rowlabel"><div className="bold">Day</div><div className="muted small">{sessionTimes(S, "day")}</div></div>
+          {WEEKDAYS.map((_, i) => cell(i + 1, "day") ?? <div key={`d${i}`} className="acell none" />)}
+          <div className="rowlabel"><div className="bold">Evening</div><div className="muted small">{sessionTimes(S, "evening")}</div></div>
+          {WEEKDAYS.map((_, i) => cell(i + 1, "evening") ?? <div key={`e${i}`} className="acell none" />)}
         </div>
         )}
 

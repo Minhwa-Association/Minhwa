@@ -41,9 +41,9 @@ export default async function MePage({ searchParams }: { searchParams: Promise<{
   const promo = openOffer ?? nextOffer;
   const promoRunning = !!promo && promo.period_start <= todayISO;
   // this week's seats on the pass (twice a week) — bookings from Monday, including days that have passed
-  // on Saturday and Sunday the week to look at is the coming one (sessions are Mon–Fri)
+  // on Sunday the week to look at is the coming one (sessions are Mon–Sat)
   const todayDate = parseISODate(todayISO);
-  const weekend = todayDate.getDay() === 0 || todayDate.getDay() === 6;
+  const weekend = todayDate.getDay() === 0;
   const weekMonday = weekend ? addDays(mondayOf(todayDate), 7) : mondayOf(todayDate);
   const weekStart = toISODate(weekMonday);
   const weekEnd = toISODate(addDays(weekMonday, 6));

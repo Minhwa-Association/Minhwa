@@ -33,12 +33,13 @@ function rangeText(from: string, to: string): string {
 function whichText(session: "day" | "evening" | null): string {
   return session ? `${sessionLabel(session)} only` : "whole day";
 }
-/** Mon–Fri sessions in the range, from today on. */
+/** Sessions in the range, from today on: Mon–Fri have Day and Evening, Saturday only Day (v19.5). */
 function sessionsIn(from: string, to: string, session: "day" | "evening" | null, today: string): number {
   let n = 0;
   for (let d = parseISODate(from > today ? from : today); toISODate(d) <= to; d = addDays(d, 1)) {
     const wd = d.getDay();
     if (wd >= 1 && wd <= 5) n += session ? 1 : 2;
+    else if (wd === 6 && session !== "evening") n += 1;
   }
   return n;
 }

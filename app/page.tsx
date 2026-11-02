@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient, currentMember } from "@/lib/supabase/server";
 
-import { addDays, isValidISODate, longDate, mondayOf, parseISODate, sessionLabel, shortDate, toISODate, weekLabel, WEEKDAYS } from "@/lib/dates";
+import { addDays, isValidISODate, longDate, mondayOf, parseISODate, sessionLabel, shortDate, toISODate, weekLabel, WEEK_LAST, WEEKDAYS } from "@/lib/dates";
 import { Chevron, LoadError, Notice, TopNav } from "@/app/components";
 import { loadFailed } from "@/lib/loadError";
 import { credits } from "@/lib/credits";
@@ -36,14 +36,14 @@ export default async function BoardPage({ searchParams }: { searchParams: Promis
   const mondayISO = toISODate(monday);
 
   const supabase = await createClient();
-  const fridayISO = toISODate(addDays(monday, 4));
+  const weekEndISO = toISODate(addDays(monday, WEEK_LAST));   // Saturday (v19.5)
   const [{ data: rows, error: rowsErr }, { data: settings }, { data: mine, error: mineErr }, { data: myWaiting, error: myWaitErr }] = await Promise.all([
     supabase.rpc("week_board", { week_start: mondayISO }),
     supabase.from("settings").select("booking_window_weeks").eq("id", 1).single(),
     supabase.from("bookings").select("slot_id, date").eq("member_id", me.id).eq("status", "booked")
-      .gte("date", mondayISO).lte("date", fridayISO),
+      .gte("date", mondayISO).lte("date", weekEndISO),
     supabase.from("waitlist").select("slot_id, date").eq("member_id", me.id).eq("status", "waiting")
-      .gte("date", mondayISO).lte("date", fridayISO),
+      .gte("date", mondayISO).lte("date", weekEndISO),
   ]);
   const failed = loadFailed("board", { week_board: rowsErr, my_bookings: mineErr, my_waitlist: myWaitErr });
   const board = (rows ?? []) as Row[];
@@ -101,7 +101,7 @@ export default async function BoardPage({ searchParams }: { searchParams: Promis
                 <div className="daylabel"><b>{name}</b><span className="small muted">{shortDate(date)}</span></div>
                 {(["day", "evening"] as const).map((s) => {
                   const r = cells.find((c) => c.session === s);
-                  if (!r) return <div key={s} className="cell" />;
+                  if (!r) return <div key={s} className="cell none" aria-hidden="true" />;   // Saturday has no Evening session
                   // no teacher = closed (v16.1): 0/0, no dots, can't be opened · a holiday (v19.2) the same, with its reason
                   const holiday = r.closed_reason ?? null;
                   const closed = !r.instructor_name || !!holiday;

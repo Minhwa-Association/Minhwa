@@ -85,7 +85,7 @@ export default async function PassPage({ searchParams }: { searchParams: Promise
                   <span className="row between"><b>{k.label}</b><span className="bold">{price[k.key]} kr</span></span>
                   <span className="small muted" style={{ display: "block", marginTop: 2 }}>
                     {k.key === "twice"
-                      ? `Up to ${settings?.pass_twice_per_week ?? 2} sessions a week (Mon–Fri). An extra session that week is ${settings?.seat_price_sek ?? 100} kr.`
+                      ? `Up to ${settings?.pass_twice_per_week ?? 2} sessions a week (Mon–Sat). An extra session that week is ${settings?.seat_price_sek ?? 100} kr.`
                       : `Come as often as you like — up to ${settings?.pass_max_upcoming ?? 4} upcoming seats booked at a time.`}
                     {k.key === "crew" && crewUntil ? ` Your Crew rate runs until ${shortDay(crewUntil)}.` : ""}
                   </span>

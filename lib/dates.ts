@@ -1,5 +1,8 @@
-export const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"] as const;
-export const WEEKDAYS_LONG = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"] as const;
+/** Days with sessions: Monday–Saturday (v19.5 added Saturday). Index = weekday − 1. */
+export const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+export const WEEKDAYS_LONG = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
+/** The last day of a board week (Saturday) = Monday + this. */
+export const WEEK_LAST = WEEKDAYS.length - 1;
 
 /** ISO date string (YYYY-MM-DD) in local time. */
 export function toISODate(d: Date): string {
@@ -34,9 +37,9 @@ export function isValidISODate(s: string | undefined): s is string {
 
 export const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 
-/** "21 – 25 September" or "28 September – 2 October" */
+/** "21 – 26 September" or "28 September – 3 October" (Monday to Saturday) */
 export function weekLabel(monday: Date): string {
-  const fri = addDays(monday, 4);
+  const fri = addDays(monday, WEEK_LAST);
   if (monday.getMonth() === fri.getMonth()) {
     return `${monday.getDate()} – ${fri.getDate()} ${MONTHS[monday.getMonth()]}`;
   }
