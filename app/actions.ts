@@ -76,17 +76,24 @@ export async function cancelPass(formData: FormData) {
   redirect(withOk(back, "pass_cancelled"));
 }
 
-/** Admin: the Crew rate for one member, with an end date (empty = no Crew rate). */
-export async function setCrewRate(formData: FormData) {
+/** Admin: Crew rates for everyone in one go (v19.6) — only members whose rate changed are written. */
+export async function setCrewRates(formData: FormData) {
   const me = await currentMember();
   if (!me || !hasRole(me, "admin")) redirect("/");
-  const memberId = String(formData.get("member_id"));
-  const until = String(formData.get("crew_rate_until") || "");
   const supabase = await createClient();
-  const { error } = await supabase.from("members").update({ crew_rate_until: isValidISODate(until) ? until : null }).eq("id", memberId);
-  if (error) backWithError("/admin/settings", error.message);
+  const changes: { id: string; until: string | null }[] = [];
+  for (const id of formData.getAll("member_id").map(String)) {
+    const on = formData.get(`rate_${id}`) === "1";
+    const until = String(formData.get(`until_${id}`) || "");
+    const orig = String(formData.get(`orig_${id}`) || "") || null;       // the active date it had, or nothing
+    const next = on && isValidISODate(until) ? until : null;
+    if (next !== orig) changes.push({ id, until: next });
+  }
+  const results = await Promise.all(changes.map((c) => supabase.from("members").update({ crew_rate_until: c.until }).eq("id", c.id)));
+  const failed = results.find((r) => r.error);
+  if (failed?.error) backWithError("/admin/settings", failed.error.message);
   revalidatePath("/admin/settings");
-  redirect("/admin/settings?ok=crew_rate#crew-rate");
+  redirect(`/admin/settings?ok=crew_rates&n=${changes.length}`);
 }
 
 /** Cancel (or decline) a seat. The freed seat goes to the first member on the waiting list — the notice says who. */

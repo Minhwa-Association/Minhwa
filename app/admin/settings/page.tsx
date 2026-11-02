@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient, currentMember } from "@/lib/supabase/server";
 import { WEEKDAYS_LONG, sessionLabel } from "@/lib/dates";
-import { addMember, disconnectDrive, setCrewRate, setInstructor, setRoles, setSlotWhatsapp, updateOrgSettings, updatePassSettings, updateSettings } from "@/app/actions";
+import { addMember, disconnectDrive, setCrewRates, setInstructor, setRoles, setSlotWhatsapp, updateOrgSettings, updatePassSettings, updateSettings } from "@/app/actions";
 import { todayStockholm, parseISODate, toISODate } from "@/lib/dates";
 import { shortDay } from "@/lib/passes";
 import { ROLES, hasRole } from "@/lib/roles";
@@ -10,11 +10,11 @@ import { Notice, TopNav } from "@/app/components";
 import { SubmitButton } from "@/app/SubmitButton";
 import { DRIVE_ACCOUNT, KVITTON_FOLDER, RECEIPTS_FOLDER, ROOT_FOLDER, driveConfigured, folderUrl } from "@/lib/drive";
 
-export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ error?: string; ok?: string }> }) {
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ error?: string; ok?: string; n?: string }> }) {
   const me = await currentMember();
   if (!me) redirect("/login");
   if (!hasRole(me, "admin")) redirect("/");
-  const { error, ok } = await searchParams;
+  const { error, ok, n } = await searchParams;
   const supabase = await createClient();
   const [{ data: settings }, { data: slots }, { data: members }, { data: driveRows }] = await Promise.all([
     supabase.from("settings").select("*").eq("id", 1).single(),
@@ -39,7 +39,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         <div><h1>Settings</h1><div className="muted small"><Link href="/admin">← Back to the admin board</Link></div></div>
         <TopNav current="admin" me={me} />
       </div>
-      <Notice error={error} ok={ok} />
+      <Notice error={error} ok={ok} text={ok === "crew_rates" ? (Number(n) > 0 ? `Crew rate saved for ${n} member${n === "1" ? "" : "s"}.` : "Nothing changed — the Crew rates are as they were.") : undefined} />
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 20, marginTop: 12 }}>
 
         <div className="card stack" style={{ padding: 18 }} id="drive">
@@ -106,33 +106,28 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
           <button className="btn ink">Save passes</button>
         </form>
 
-        <div className="card stack" style={{ padding: 18 }} id="crew-rate">
+        <form action={setCrewRates} className="card stack" style={{ padding: 18 }} id="crew-rate">
           <h2>Crew rate</h2>
-          <div className="muted small">Who may buy Crew Unlimited, and until when. After the date they can&apos;t buy it again — a pass already bought runs to the end of its period. Separate from the Crew role (Calendar).</div>
+          <div className="muted small">Who may buy Crew Unlimited, and until when. Tick a member and set the end date (3 months from today is filled in), untick to take the rate away — then press <b>Save Crew rates</b> once for everyone. After the date they can&apos;t buy it again; a pass already bought runs to the end of its period. Separate from the Crew role (Calendar).</div>
           {crewList.map((m) => {
             const active = !!m.crew_rate_until && m.crew_rate_until >= today;
             return (
-              <div key={m.id} className="memberrow">
-                <div className="grow" style={{ minWidth: 140 }}>
+              <div key={m.id} className="memberrow" style={{ gap: 10 }}>
+                <input type="hidden" name="member_id" value={m.id} />
+                <input type="hidden" name={`orig_${m.id}`} value={active ? m.crew_rate_until! : ""} />
+                <label className="check" style={{ minWidth: 0 }}>
+                  <input type="checkbox" name={`rate_${m.id}`} value="1" defaultChecked={active} aria-label={`Crew rate for ${m.name}`} /> Crew rate
+                </label>
+                <div className="grow" style={{ minWidth: 120 }}>
                   <div style={{ fontWeight: 600 }}>{m.name}{hasRole(m, "crew") ? <span className="muted small"> · Crew</span> : null}</div>
-                  <div className="small" style={{ color: active ? "var(--green-text)" : "var(--muted)" }}>{active ? `Crew rate until ${shortDay(m.crew_rate_until!)}` : m.crew_rate_until ? `Ended ${shortDay(m.crew_rate_until)}` : "No Crew rate"}</div>
+                  <div className="small" style={{ color: active ? "var(--green-text)" : "var(--muted)" }}>{active ? `Until ${shortDay(m.crew_rate_until!)}` : m.crew_rate_until ? `Ended ${shortDay(m.crew_rate_until)}` : "No Crew rate"}</div>
                 </div>
-                <form action={setCrewRate} className="row" style={{ gap: 6 }}>
-                  <input type="hidden" name="member_id" value={m.id} />
-                  <input name="crew_rate_until" type="date" defaultValue={active ? m.crew_rate_until! : in3months} className="inline" style={{ width: 150 }} aria-label={`Crew rate end date for ${m.name}`} />
-                  <button className="btn line sm">{active ? "Change" : "Give"}</button>
-                </form>
-                {active && (
-                  <form action={setCrewRate}>
-                    <input type="hidden" name="member_id" value={m.id} />
-                    <input type="hidden" name="crew_rate_until" value="" />
-                    <button className="btn quiet sm">Remove</button>
-                  </form>
-                )}
+                <input name={`until_${m.id}`} type="date" defaultValue={active ? m.crew_rate_until! : in3months} className="inline" style={{ width: 150 }} aria-label={`Crew rate end date for ${m.name}`} />
               </div>
             );
           })}
-        </div>
+          <SubmitButton className="btn ink" pendingText="Saving…">Save Crew rates</SubmitButton>
+        </form>
 
         <div className="card stack" style={{ padding: 18 }}>
           <h2>Teachers per slot</h2>
